@@ -190,13 +190,24 @@ export function renderBorders(ctx, geoData, projection, dpr) {
   ctx.save();
   ctx.scale(dpr, dpr);
 
-  // State/region borders (thin, light)
+  // US-style pre-computed mesh borders
   if (geoData.stateBorders) {
     ctx.strokeStyle = 'rgba(0,0,0,0.12)';
     ctx.lineWidth = 0.5;
     ctx.beginPath();
     pathGen(geoData.stateBorders);
     ctx.stroke();
+  }
+
+  // GeoJSON countries: draw individual region borders
+  if (geoData.regionBorders && geoData.features) {
+    ctx.strokeStyle = 'rgba(0,0,0,0.1)';
+    ctx.lineWidth = 0.3;
+    for (const feature of geoData.features) {
+      ctx.beginPath();
+      pathGen(feature);
+      ctx.stroke();
+    }
   }
 
   // Country outline (darker, thicker)

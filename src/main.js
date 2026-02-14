@@ -3,7 +3,7 @@
 
 import './style.css';
 import { COUNTRIES, DEFAULT_COUNTRY, RESIZE_DEBOUNCE } from './config.js';
-import { loadUS, loadGridCountry } from './geoLoader.js';
+import { loadUS, loadGeoJSONCountry } from './geoLoader.js';
 import { generateSampleData } from './sampleData.js';
 import { computeDots, colourDots, renderDots, renderBorders, buildHitTestCanvas } from './dots.js';
 import {
@@ -99,15 +99,8 @@ async function switchCountry(id) {
     // Load geo data
     if (config.boundaryType === 'counties') {
       state.geoData = await loadUS(config.boundaryUrl, width, height);
-    } else {
-      state.geoData = await loadGridCountry(
-        config.boundaryUrl,
-        config.isoCode,
-        config.gridSize,
-        width,
-        height,
-        config.aspectRatio,
-      );
+    } else if (config.boundaryType === 'geojson') {
+      state.geoData = await loadGeoJSONCountry(config.boundaryUrl, config, width, height);
     }
 
     // Generate sample election data
@@ -260,7 +253,7 @@ function handleMouseMove(e) {
   const year = config.elections[state.yearIndex];
   const regionData = state.electionData[year]?.[featureIndex];
   const feature = state.geoData.features[featureIndex];
-  const regionName = feature?.properties?.name || feature?.properties?.NAME || `Region ${featureIndex + 1}`;
+  const regionName = feature?.properties?._name || feature?.properties?.name || feature?.properties?.NAME || `Region ${featureIndex + 1}`;
 
   showTooltip(
     ui.tooltip,

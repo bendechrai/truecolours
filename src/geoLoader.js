@@ -1,12 +1,12 @@
-// Fetch TopoJSON, extract features, generate grid subdivisions for non-US countries
+// Fetch TopoJSON/GeoJSON, extract features for all country types
 
 import * as d3 from 'd3';
 import * as topojson from 'topojson-client';
 import { TEST_CANVAS_SIZE } from './config.js';
 
 /**
- * Load US county boundaries (real TopoJSON).
- * Returns { features, stateFeatures, projection }
+ * Load US county boundaries (real TopoJSON from us-atlas).
+ * Returns { features, stateFeatures, outline, stateBorders, projection }
  */
 export async function loadUS(url, width, height) {
   const topo = await d3.json(url);
@@ -25,124 +25,64 @@ export async function loadUS(url, width, height) {
 }
 
 /**
- * Load a country outline from world-atlas and generate grid subdivisions.
- * Returns { features, outline, projection }
- *
- * The grid subdivision works by:
- * 1. Extract the country feature by ISO numeric code
- * 2. Project it and rasterise to a mask canvas
- * 3. Create grid cells, keeping only those whose centre falls inside the mask
+ * Load real GeoJSON boundaries for UK, Australia, or Canada.
+ * Returns { features, outline, regionBorders, projection }
  */
-export async function loadGridCountry(url, isoCode, gridSize, width, height, aspectRatio) {
-  const topo = await d3.json(url);
-  const countries = topojson.feature(topo, topo.objects.countries);
+export async function loadGeoJSONCountry(url, config, width, height) {
+  const geojson = await d3.json(url);
 
-  // Find the country by ISO numeric code (stored as string id)
-  const countryFeature = countries.features.find(
-    (f) => +f.id === isoCode || f.properties.name === String(isoCode)
+  // The response should be a GeoJSON FeatureCollection
+  let features = geojson.features || geojson;
+  if (!Array.isArray(features)) {
+    throw new Error('Expected a GeoJSON FeatureCollection');
+  }
+
+  // Filter out features with null/empty geometry
+  features = features.filter(
+    (f) => f.geometry && f.geometry.coordinates && f.geometry.coordinates.length > 0
   );
-  if (!countryFeature) {
-    throw new Error(`Country with ISO code ${isoCode} not found in world-atlas`);
+
+  // Normalize the name property so tooltips can find it consistently
+  const nameProp = config.nameProperty;
+  for (let i = 0; i < features.length; i++) {
+    const props = features[i].properties || {};
+    let name = props[nameProp];
+    // Some APIs return arrays (e.g. OpenDataSoft)
+    if (Array.isArray(name)) name = name[0];
+    features[i].properties = { ...props, _name: name || `Region ${i + 1}` };
+    features[i].id = i;
   }
 
-  // Create projection fitted to this country
-  const projection = d3.geoMercator().fitSize([width, height], countryFeature);
+  // Choose projection
+  const collection = { type: 'FeatureCollection', features };
+  let projection;
 
-  // Rasterise country outline to a mask
-  const maskSize = 800;
-  const maskProjection = d3.geoMercator().fitSize([maskSize, maskSize], countryFeature);
-  const maskCanvas = new OffscreenCanvas(maskSize, maskSize);
-  const maskCtx = maskCanvas.getContext('2d');
-  const maskPath = d3.geoPath(maskProjection, maskCtx);
-
-  maskCtx.fillStyle = '#000';
-  maskCtx.beginPath();
-  maskPath(countryFeature);
-  maskCtx.fill();
-
-  const maskData = maskCtx.getImageData(0, 0, maskSize, maskSize).data;
-
-  function isInsideMask(px, py) {
-    const x = Math.round(px);
-    const y = Math.round(py);
-    if (x < 0 || x >= maskSize || y < 0 || y >= maskSize) return false;
-    return maskData[(y * maskSize + x) * 4 + 3] > 0; // check alpha
+  if (config.projection === 'conicConformal') {
+    // Good for Canada — preserves shapes at high latitudes
+    projection = d3.geoConicConformal()
+      .rotate([96, 0])
+      .parallels([49, 77])
+      .fitSize([width, height], collection);
+  } else {
+    // Default: Mercator fitted to features
+    projection = d3.geoMercator().fitSize([width, height], collection);
   }
 
-  // Get projected bounding box
-  const pathGen = d3.geoPath(maskProjection);
-  const bounds = pathGen.bounds(countryFeature);
-  const bx0 = bounds[0][0];
-  const by0 = bounds[0][1];
-  const bw = bounds[1][0] - bounds[0][0];
-  const bh = bounds[1][1] - bounds[0][1];
-
-  // Generate grid cells
-  const cellW = bw / gridSize;
-  const cellH = bh / gridSize;
-  const features = [];
-  let regionIndex = 0;
-
-  for (let row = 0; row < gridSize; row++) {
-    for (let col = 0; col < gridSize; col++) {
-      const cx = bx0 + (col + 0.5) * cellW;
-      const cy = by0 + (row + 0.5) * cellH;
-
-      if (!isInsideMask(cx, cy)) continue;
-
-      // Create a rectangular polygon in projected coordinates, then unproject
-      const x0 = bx0 + col * cellW;
-      const y0 = by0 + row * cellH;
-      const x1 = x0 + cellW;
-      const y1 = y0 + cellH;
-
-      // Clip the cell to the mask by checking corners and midpoints
-      // For simplicity, we create the full rectangle — dots will be rejection-sampled against the actual shape
-      const corners = [
-        [x0, y0], [x1, y0], [x1, y1], [x0, y1], [x0, y0],
-      ];
-
-      // Unproject corners back to lon/lat
-      const coords = corners.map((p) => maskProjection.invert(p)).filter(Boolean);
-      if (coords.length < 4) continue;
-      coords.push(coords[0]); // close ring
-
-      features.push({
-        type: 'Feature',
-        id: regionIndex,
-        properties: {
-          name: `Region ${regionIndex + 1}`,
-          gridRow: row,
-          gridCol: col,
-        },
-        geometry: {
-          type: 'Polygon',
-          coordinates: [coords],
-        },
-      });
-      regionIndex++;
-    }
-  }
-
-  // Build outline as GeoJSON for border rendering
-  const outline = countryFeature;
-
+  // Build a merged outline from all features for border rendering
+  // We draw individual region borders instead of a single mesh
   return {
     features,
     stateFeatures: null,
-    outline: countryFeature,
+    outline: collection,        // country outline = union of all features
     stateBorders: null,
+    regionBorders: true,        // flag to draw individual feature borders
     projection,
-    maskCanvas,
-    maskProjection,
-    maskSize,
-    maskData,
   };
 }
 
 /**
  * Measure the rendered pixel area of a feature using a test canvas.
- * Returns the number of filled pixels in the rasterised polygon.
+ * Returns { pixelArea, bounds, scale }
  */
 export function measureFeatureArea(feature, projection) {
   const canvas = new OffscreenCanvas(TEST_CANVAS_SIZE, TEST_CANVAS_SIZE);
