@@ -64,6 +64,7 @@ export const COUNTRIES = {
     boundaryUrl: 'https://raw.githubusercontent.com/pmcau/AustralianElectorates/main/Data/Maps/2025/australia_01.geojson',
     boundaryType: 'geojson',
     nameProperty: 'electorateName',
+    clipBounds: { lonMin: 112, lonMax: 155, latMin: -45, latMax: -9 },
     aspectRatio: 0.85,
     dataSources: [
       { name: 'Australian Electoral Commission', url: 'https://www.aec.gov.au/' },

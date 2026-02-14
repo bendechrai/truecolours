@@ -42,6 +42,32 @@ export async function loadGeoJSONCountry(url, config, width, height) {
     (f) => f.geometry && f.geometry.coordinates && f.geometry.coordinates.length > 0
   );
 
+  // Strip offshore territory polygons outside clipBounds (e.g. Norfolk Island,
+  // Christmas Island, Lord Howe Island for Australia)
+  if (config.clipBounds) {
+    const { lonMin, lonMax, latMin, latMax } = config.clipBounds;
+    features = features
+      .map((f) => {
+        if (f.geometry.type !== 'MultiPolygon') return f;
+        const kept = f.geometry.coordinates.filter((poly) => {
+          // Check outer ring centroid against bounds
+          const ring = poly[0];
+          const avgLon = ring.reduce((s, c) => s + c[0], 0) / ring.length;
+          const avgLat = ring.reduce((s, c) => s + c[1], 0) / ring.length;
+          return avgLon >= lonMin && avgLon <= lonMax &&
+                 avgLat >= latMin && avgLat <= latMax;
+        });
+        if (kept.length === 0) return null;
+        return {
+          ...f,
+          geometry: kept.length === 1
+            ? { type: 'Polygon', coordinates: kept[0] }
+            : { type: 'MultiPolygon', coordinates: kept },
+        };
+      })
+      .filter(Boolean);
+  }
+
   // Normalize the name property so tooltips can find it consistently
   const nameProp = config.nameProperty;
   for (let i = 0; i < features.length; i++) {
