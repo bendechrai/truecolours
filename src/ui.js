@@ -33,11 +33,11 @@ export function buildUI(container) {
   }
   container.appendChild(countryBar);
 
-  // Sample data banner
+  // Data source banner
   const banner = el('div', { className: 'sample-banner' }, [
-    el('strong', {}, ['Sample data']),
-    ' \u2014 This map uses randomly generated election results for demonstration. ',
-    'Real data can be plugged in by replacing the data module.',
+    el('strong', {}, ['Real election data']),
+    ' \u2014 Results sourced from official electoral commissions and open datasets. ',
+    'Scroll down for details.',
   ]);
   container.appendChild(banner);
 
@@ -45,11 +45,15 @@ export function buildUI(container) {
   const mapCard = el('div', { className: 'map-card' });
   const mapContainer = el('div', { className: 'map-container' });
 
+  // Inner wrapper for zoom transforms (all canvases move together)
+  const zoomWrapper = el('div', { className: 'zoom-wrapper' });
+
   const dotCanvas = el('canvas', { className: 'map-canvas dot-canvas' });
   const borderCanvas = el('canvas', { className: 'map-canvas border-canvas' });
   const interactionCanvas = el('canvas', { className: 'map-canvas interaction-canvas' });
 
-  mapContainer.append(dotCanvas, borderCanvas, interactionCanvas);
+  zoomWrapper.append(dotCanvas, borderCanvas, interactionCanvas);
+  mapContainer.appendChild(zoomWrapper);
   mapCard.appendChild(mapContainer);
 
   // Legend
@@ -82,6 +86,13 @@ export function buildUI(container) {
 
   container.appendChild(mapCard);
 
+  // Loading overlay (inside map container)
+  const loadingOverlay = el('div', { className: 'loading-overlay hidden' }, [
+    el('div', { className: 'loading-spinner' }),
+    el('div', { className: 'loading-text' }, ['Loading...']),
+  ]);
+  mapContainer.appendChild(loadingOverlay);
+
   // Tooltip
   const tooltip = el('div', { className: 'tooltip hidden' });
   container.appendChild(tooltip);
@@ -109,6 +120,7 @@ export function buildUI(container) {
     banner,
     mapCard,
     mapContainer,
+    zoomWrapper,
     dotCanvas,
     borderCanvas,
     interactionCanvas,
@@ -120,6 +132,7 @@ export function buildUI(container) {
     nextBtn,
     slider,
     yearLabels,
+    loadingOverlay,
     tooltip,
     isEmbed,
   };
@@ -286,7 +299,7 @@ function buildExplainer() {
     ]),
     el('h3', {}, ['Data Sources']),
     el('p', {}, [
-      'This demo uses generated sample data. When real data is added, the sources will be:',
+      'Election results are sourced from:',
     ]),
     el('ul', {}, [
       el('li', {}, [

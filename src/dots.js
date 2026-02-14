@@ -183,6 +183,9 @@ export function renderDots(ctx, dots, colours, dpr) {
     const g = colours[i * 3 + 1];
     const b = colours[i * 3 + 2];
 
+    // Skip dots with no election data (unmapped regions default to 0,0,0)
+    if (r === 0 && g === 0 && b === 0) continue;
+
     ctx.fillStyle = `rgb(${r},${g},${b})`;
     ctx.beginPath();
     ctx.arc(dots[i].x * dpr, dots[i].y * dpr, radius, 0, Math.PI * 2);
@@ -200,10 +203,10 @@ export function renderBorders(ctx, geoData, projection, dpr) {
   ctx.save();
   ctx.scale(dpr, dpr);
 
-  // US-style pre-computed mesh borders
+  // US-style pre-computed mesh borders (state lines)
   if (geoData.stateBorders) {
-    ctx.strokeStyle = 'rgba(0,0,0,0.12)';
-    ctx.lineWidth = 0.5;
+    ctx.strokeStyle = 'rgba(0,0,0,0.35)';
+    ctx.lineWidth = 1.0;
     ctx.beginPath();
     pathGen(geoData.stateBorders);
     ctx.stroke();

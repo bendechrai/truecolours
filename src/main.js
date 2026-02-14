@@ -2,6 +2,7 @@
 // State management, event wiring, init, resize
 
 import './style.css';
+import * as d3 from 'd3';
 import { COUNTRIES, DEFAULT_COUNTRY, RESIZE_DEBOUNCE } from './config.js';
 import { loadUS, loadGeoJSONCountry } from './geoLoader.js';
 import { loadElectionData } from './electionData.js';
@@ -61,12 +62,33 @@ function init() {
   );
   ui.playBtn.addEventListener('click', () => autoplay.toggle());
 
-  // Wire interaction canvas for tooltips
-  ui.interactionCanvas.addEventListener('mousemove', handleMouseMove);
-  ui.interactionCanvas.addEventListener('mouseleave', () => hideTooltip(ui.tooltip));
-  ui.interactionCanvas.addEventListener('touchstart', handleTouch, { passive: true });
-  ui.interactionCanvas.addEventListener('touchmove', handleTouch, { passive: true });
-  ui.interactionCanvas.addEventListener('touchend', () => hideTooltip(ui.tooltip));
+  // Wire map container for tooltips (interaction canvas has pointer-events:none)
+  ui.mapContainer.addEventListener('mousemove', handleMouseMove);
+  ui.mapContainer.addEventListener('mouseleave', () => hideTooltip(ui.tooltip));
+
+  // Pinch / scroll zoom via d3-zoom on the map container
+  const zoom = d3.zoom()
+    .scaleExtent([1, 10])
+    .filter((event) => {
+      // Allow pinch (multi-touch), wheel, and mouse drag — but NOT single-
+      // touch drag so mobile users can still scroll the page.
+      if (event.type === 'touchstart' || event.type === 'touchmove') {
+        return event.touches && event.touches.length >= 2;
+      }
+      return !event.button; // left-click drag + wheel
+    })
+    .on('zoom', (event) => {
+      const { x, y, k } = event.transform;
+      ui.zoomWrapper.style.transform = `translate(${x}px,${y}px) scale(${k})`;
+    });
+
+  d3.select(ui.mapContainer)
+    .call(zoom)
+    .on('dblclick.zoom', null); // disable double-click zoom
+
+  // Reset zoom when switching countries
+  state.zoomBehavior = zoom;
+  state.mapContainerSelection = d3.select(ui.mapContainer);
 
   // Debounced resize
   let resizeTimer;
@@ -90,24 +112,37 @@ async function switchCountry(id) {
   state.yearIndex = config.elections.length - 1; // start at latest
 
   setActiveCountryButton(id);
-  showLoading();
+  showLoading('Loading boundaries... 0%');
+
+  // Reset zoom to identity when switching countries
+  if (state.zoomBehavior && state.mapContainerSelection) {
+    state.mapContainerSelection.call(state.zoomBehavior.transform, d3.zoomIdentity);
+  }
 
   try {
     // Set up canvases
     const { width, height } = setupCanvases(config.aspectRatio);
 
-    // Load geo data
+    // Load geo data (step 1 of 4)
     if (config.boundaryType === 'counties') {
       state.geoData = await loadUS(config.boundaryUrl, width, height);
     } else if (config.boundaryType === 'geojson') {
       state.geoData = await loadGeoJSONCountry(config.boundaryUrl, config, width, height);
     }
+    updateLoadingProgress('Loading election data... 25%');
 
-    // Load real election data
+    // Allow the UI to repaint before continuing
+    await new Promise((r) => requestAnimationFrame(r));
+
+    // Load real election data (step 2 of 4)
     state.electionData = await loadElectionData(id, config, state.geoData.features);
+    updateLoadingProgress('Placing dots... 50%');
+    await new Promise((r) => requestAnimationFrame(r));
 
-    // Compute dot positions on hex grid
+    // Compute dot positions on hex grid (step 3 of 4)
     state.dots = computeDots(state.geoData.features, state.geoData.projection, config.dotBudget, width, height);
+    updateLoadingProgress('Rendering... 75%');
+    await new Promise((r) => requestAnimationFrame(r));
 
     // Build hit-test canvas
     state.hitTest = buildHitTestCanvas(
@@ -118,7 +153,7 @@ async function switchCountry(id) {
       dpr,
     );
 
-    // Colour and render
+    // Colour and render (step 4 of 4)
     colourAndRender();
 
     // Render borders
@@ -128,8 +163,11 @@ async function switchCountry(id) {
     // Update UI
     updateLegendUI();
     updateTimelineUI();
+
+    hideLoading();
   } catch (err) {
     console.error('Failed to load country:', err);
+    hideLoading();
     showError(err.message);
   }
 
@@ -218,11 +256,22 @@ function updateTimelineUI() {
   });
 }
 
-function showLoading() {
+function showLoading(msg = 'Loading...') {
+  ui.loadingOverlay.classList.remove('hidden');
+  ui.loadingOverlay.querySelector('.loading-text').textContent = msg;
+
   const dotCtx = ui.dotCanvas.getContext('2d');
   const borderCtx = ui.borderCanvas.getContext('2d');
   dotCtx.clearRect(0, 0, ui.dotCanvas.width, ui.dotCanvas.height);
   borderCtx.clearRect(0, 0, ui.borderCanvas.width, ui.borderCanvas.height);
+}
+
+function hideLoading() {
+  ui.loadingOverlay.classList.add('hidden');
+}
+
+function updateLoadingProgress(msg) {
+  ui.loadingOverlay.querySelector('.loading-text').textContent = msg;
 }
 
 function showError(msg) {
@@ -238,9 +287,16 @@ function showError(msg) {
 function handleMouseMove(e) {
   if (!state.hitTest || !state.electionData) return;
 
-  const rect = ui.interactionCanvas.getBoundingClientRect();
-  const x = e.clientX - rect.left;
-  const y = e.clientY - rect.top;
+  const rect = ui.mapContainer.getBoundingClientRect();
+  const mx = e.clientX - rect.left;
+  const my = e.clientY - rect.top;
+
+  // Invert zoom transform to get coordinates in map-space
+  const t = state.mapContainerSelection
+    ? d3.zoomTransform(ui.mapContainer)
+    : d3.zoomIdentity;
+  const x = (mx - t.x) / t.k;
+  const y = (my - t.y) / t.k;
 
   const featureIndex = state.hitTest.getFeatureIndex(x, y);
   if (featureIndex < 0) {
