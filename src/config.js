@@ -89,7 +89,8 @@ export const COUNTRIES = {
     boundaryUrl: './data/ca-boundaries.geojson',
     boundaryType: 'geojson',
     nameProperty: 'name',
-    aspectRatio: 0.9,
+    fitLatMax: 70,
+    aspectRatio: 0.7,
     dataSources: [
       { name: 'Elections Canada', url: 'https://www.elections.ca/' },
       { name: 'Canadian Federal Election Data', url: 'https://github.com/bwbecker/cdnFedElectionData' },

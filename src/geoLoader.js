@@ -83,21 +83,33 @@ export async function loadGeoJSONCountry(url, config, width, height) {
   const collection = { type: 'FeatureCollection', features };
   let projection;
 
+  // When fitLatMax is set, fit the projection to features below that latitude
+  // so extreme high-latitude features (e.g. Nunavut at 83N in Mercator) don't
+  // crush the rest of the map into a tiny sliver.
+  let fitCollection = collection;
+  if (config.fitLatMax) {
+    const focusFeatures = features.filter((f) => {
+      const c = d3.geoCentroid(f);
+      return c[1] < config.fitLatMax;
+    });
+    if (focusFeatures.length > 0) {
+      fitCollection = { type: 'FeatureCollection', features: focusFeatures };
+    }
+  }
+
   if (config.projection === 'conicEqualArea') {
-    // Albers equal-area conic — ideal for Canada dot density maps
-    // (preserves area so dots represent equal geographic area)
     projection = d3.geoConicEqualArea()
       .rotate([96, 0])
       .parallels([50, 70])
-      .fitSize([width, height], collection);
+      .fitSize([width, height], fitCollection);
   } else if (config.projection === 'conicConformal') {
     projection = d3.geoConicConformal()
       .rotate([96, 0])
       .parallels([49, 77])
-      .fitSize([width, height], collection);
+      .fitSize([width, height], fitCollection);
   } else {
     // Default: Mercator fitted to features
-    projection = d3.geoMercator().fitSize([width, height], collection);
+    projection = d3.geoMercator().fitSize([width, height], fitCollection);
   }
 
   // Build a merged outline from all features for border rendering

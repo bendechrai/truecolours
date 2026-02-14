@@ -66,16 +66,13 @@ function init() {
   ui.mapContainer.addEventListener('mousemove', handleMouseMove);
   ui.mapContainer.addEventListener('mouseleave', () => hideTooltip(ui.tooltip));
 
-  // Pinch / scroll zoom via d3-zoom on the map container
+  // Pinch / scroll / drag zoom on the map container
   const zoom = d3.zoom()
     .scaleExtent([1, 10])
     .filter((event) => {
-      // Allow pinch (multi-touch), wheel, and mouse drag — but NOT single-
-      // touch drag so mobile users can still scroll the page.
-      if (event.type === 'touchstart' || event.type === 'touchmove') {
-        return event.touches && event.touches.length >= 2;
-      }
-      return !event.button; // left-click drag + wheel
+      // Allow all touch gestures (single-finger pan + pinch zoom) and mouse
+      if (event.type === 'wheel') return true;
+      return !event.button; // left-click drag + any touch
     })
     .on('zoom', (event) => {
       const { x, y, k } = event.transform;
