@@ -4,7 +4,7 @@
 import './style.css';
 import { COUNTRIES, DEFAULT_COUNTRY, RESIZE_DEBOUNCE } from './config.js';
 import { loadUS, loadGeoJSONCountry } from './geoLoader.js';
-import { generateSampleData } from './sampleData.js';
+import { loadElectionData } from './electionData.js';
 import { computeDots, colourDots, renderDots, renderBorders, buildHitTestCanvas } from './dots.js';
 import {
   buildUI,
@@ -103,9 +103,8 @@ async function switchCountry(id) {
       state.geoData = await loadGeoJSONCountry(config.boundaryUrl, config, width, height);
     }
 
-    // Generate sample election data
-    const regionCount = state.geoData.features.length;
-    state.electionData = generateSampleData(id, config, regionCount);
+    // Load real election data
+    state.electionData = await loadElectionData(id, config, state.geoData.features);
 
     // Compute dot positions (this is the expensive part)
     state.dots = computeDots(state.geoData.features, state.geoData.projection, config.dotBudget);

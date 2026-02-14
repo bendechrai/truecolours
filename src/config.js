@@ -21,6 +21,7 @@ export const COUNTRIES = {
     gridSize: null, // uses real boundaries
     dataSources: [
       { name: 'MIT Election Data + Science Lab', url: 'https://electionlab.mit.edu/' },
+      { name: 'US County Presidential Results (stiles)', url: 'https://github.com/stiles/presidential-elections' },
     ],
   },
   uk: {
@@ -44,14 +45,14 @@ export const COUNTRIES = {
     nameProperty: 'PCON24NM',
     aspectRatio: 1.6,
     dataSources: [
-      { name: 'Electoral Commission', url: 'https://www.electoralcommission.org.uk/' },
+      { name: 'Electoral Calculus', url: 'https://www.electoralcalculus.co.uk/' },
     ],
   },
   au: {
     name: 'Australia',
     flag: '\u{1F1E6}\u{1F1FA}',
     isoCode: 36,
-    elections: [2001, 2004, 2007, 2010, 2013, 2016, 2019, 2022, 2025],
+    elections: [2004, 2007, 2010, 2013, 2016, 2019, 2022, 2025],
     dotBudget: 14000,
     parties: [
       { id: 'coa', name: 'Coalition', colour: '#1C4F9C' },
@@ -86,12 +87,13 @@ export const COUNTRIES = {
     ],
     nonVoterColour: '#CFCFCF',
     projection: 'conicConformal',
-    boundaryUrl: 'https://public.opendatasoft.com/api/explore/v2.1/catalog/datasets/georef-canada-federal-electoral-district/exports/geojson',
+    boundaryUrl: './data/ca-boundaries.geojson',
     boundaryType: 'geojson',
-    nameProperty: 'fed_name_en',
+    nameProperty: 'name',
     aspectRatio: 0.75,
     dataSources: [
       { name: 'Elections Canada', url: 'https://www.elections.ca/' },
+      { name: 'Canadian Federal Election Data', url: 'https://github.com/bwbecker/cdnFedElectionData' },
     ],
   },
 };
