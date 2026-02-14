@@ -490,6 +490,17 @@ body {
   border-top: 1px solid var(--card-border);
 }
 
+.site-footer .contribute {
+  font-size: 0.78rem;
+  margin-top: 0.25rem;
+  opacity: 0.7;
+}
+
+.site-footer .contribute a {
+  color: inherit;
+  text-decoration: underline;
+}
+
 /* Loading overlay on the map */
 .loading-overlay {
   position: absolute;

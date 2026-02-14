@@ -110,6 +110,11 @@ export function buildUI(container) {
     // Footer
     const footer = el('footer', { className: 'site-footer' }, [
       el('p', {}, ['True Colours \u2014 Making every vote visible.']),
+      el('p', { className: 'contribute' }, [
+        'Open source on ',
+        el('a', { href: 'https://github.com/bendechrai/truecolours', target: '_blank', rel: 'noopener' }, ['GitHub']),
+        ' \u2014 issues and pull requests welcome.',
+      ]),
     ]);
     container.appendChild(footer);
   }
