@@ -402,6 +402,37 @@ body {
   text-decoration: underline;
 }
 
+.explainer .map-examples {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1.25rem;
+  margin: 1rem 0 1.25rem;
+  max-width: 680px;
+}
+
+.explainer .map-example {
+  flex: 1 1 200px;
+  max-width: 300px;
+}
+
+.explainer .map-example img {
+  width: 100%;
+  height: auto;
+  border-radius: 6px;
+  border: 1px solid var(--border, #333);
+}
+
+.explainer .map-example figcaption {
+  font-size: 0.78rem;
+  color: var(--text-muted);
+  margin-top: 0.3rem;
+  line-height: 1.35;
+}
+
+.explainer .map-example figcaption a {
+  color: #1375B7;
+}
+
 /* Embed section */
 .embed-section {
   margin-bottom: 2rem;
