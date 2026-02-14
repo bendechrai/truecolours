@@ -42,6 +42,14 @@ export async function loadGeoJSONCountry(url, config, width, height) {
     (f) => f.geometry && f.geometry.coordinates && f.geometry.coordinates.length > 0
   );
 
+  // Rewind polygon rings to the d3-geo / RFC 7946 convention
+  // (counterclockwise exterior, clockwise holes).  Many GeoJSON files from
+  // Shapefile conversions use the opposite convention, which causes d3-geo's
+  // clipping to treat each polygon as its spherical complement.
+  for (const f of features) {
+    rewindFeature(f);
+  }
+
   // Strip offshore territory polygons outside clipBounds (e.g. Norfolk Island,
   // Christmas Island, Lord Howe Island for Australia)
   if (config.clipBounds) {
@@ -151,7 +159,7 @@ export function measureFeatureArea(feature, projection) {
   ctx.fillStyle = '#000';
   ctx.beginPath();
   pathGen(feature);
-  ctx.fill();
+  ctx.fill('evenodd');
   ctx.restore();
 
   // Count filled pixels
@@ -165,4 +173,24 @@ export function measureFeatureArea(feature, projection) {
   const pixelArea = filled / (scale * scale);
 
   return { pixelArea, bounds, scale };
+}
+
+/**
+ * Ensure a GeoJSON feature's polygon rings follow the d3-geo / RFC 7946
+ * winding convention.  Uses d3.geoArea — if the computed spherical area
+ * exceeds 2π the feature covers more than half the sphere, which means
+ * the rings are wound the wrong way.
+ */
+function rewindFeature(feature) {
+  const area = d3.geoArea(feature);
+  if (area <= 2 * Math.PI) return; // winding is already correct
+
+  const geom = feature.geometry;
+  if (geom.type === 'Polygon') {
+    geom.coordinates = geom.coordinates.map((ring) => ring.slice().reverse());
+  } else if (geom.type === 'MultiPolygon') {
+    geom.coordinates = geom.coordinates.map((poly) =>
+      poly.map((ring) => ring.slice().reverse()),
+    );
+  }
 }
