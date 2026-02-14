@@ -288,6 +288,69 @@ function buildCA() {
   console.log(`CA: ${(readFileSync(outPath).length / 1024).toFixed(0)} KB`);
 }
 
+// ── AU Boundaries ──────────────────────────────────────────────────
+
+function buildAUBoundaries() {
+  const rawPath = join(TMP, 'au_boundaries_raw.geojson');
+  if (!existsSync(rawPath)) {
+    console.log('AU boundaries: skipped (no raw file)');
+    return;
+  }
+
+  console.log('AU boundaries: clipping offshore + simplifying...');
+  const data = JSON.parse(readFileSync(rawPath, 'utf8'));
+
+  // Clip to mainland Australia + Tasmania
+  const lonMin = 113, lonMax = 154, latMin = -44, latMax = -10;
+
+  function roundCoords(coords, precision) {
+    if (typeof coords[0] === 'number') {
+      return coords.map(c => Math.round(c * precision) / precision);
+    }
+    return coords.map(c => roundCoords(c, precision));
+  }
+
+  const features = data.features
+    .filter(f => f.geometry && f.geometry.coordinates?.length > 0)
+    .map(f => {
+      const name = f.properties.electorateName;
+      if (f.geometry.type === 'Polygon') {
+        const ring = f.geometry.coordinates[0];
+        const avgLon = ring.reduce((s, c) => s + c[0], 0) / ring.length;
+        const avgLat = ring.reduce((s, c) => s + c[1], 0) / ring.length;
+        if (avgLon < lonMin || avgLon > lonMax || avgLat < latMin || avgLat > latMax) return null;
+        return {
+          type: 'Feature',
+          properties: { name },
+          geometry: { type: 'Polygon', coordinates: roundCoords(f.geometry.coordinates, 1000) },
+        };
+      }
+      if (f.geometry.type === 'MultiPolygon') {
+        const kept = f.geometry.coordinates.filter(poly => {
+          const ring = poly[0];
+          const avgLon = ring.reduce((s, c) => s + c[0], 0) / ring.length;
+          const avgLat = ring.reduce((s, c) => s + c[1], 0) / ring.length;
+          return avgLon >= lonMin && avgLon <= lonMax && avgLat >= latMin && avgLat <= latMax;
+        });
+        if (kept.length === 0) return null;
+        return {
+          type: 'Feature',
+          properties: { name },
+          geometry: kept.length === 1
+            ? { type: 'Polygon', coordinates: roundCoords(kept[0], 1000) }
+            : { type: 'MultiPolygon', coordinates: roundCoords(kept, 1000) },
+        };
+      }
+      return null;
+    })
+    .filter(Boolean);
+
+  const outPath = join(OUT_DIR, 'au-boundaries.geojson');
+  const out = JSON.stringify({ type: 'FeatureCollection', features });
+  writeFileSync(outPath, out);
+  console.log(`AU boundaries: ${features.length} divisions, ${(out.length / 1024).toFixed(0)} KB`);
+}
+
 // ── CA Boundaries ──────────────────────────────────────────────────
 
 function buildCABoundaries() {
@@ -336,6 +399,7 @@ buildUS();
 buildUK();
 buildAU();
 buildCA();
+buildAUBoundaries();
 buildCABoundaries();
 
 console.log('\nDone! Files written to public/data/');

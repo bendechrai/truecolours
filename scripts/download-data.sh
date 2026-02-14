@@ -65,6 +65,13 @@ curl -sL --max-time 15 \
   -o /tmp/ca_cand_2025.csv
 echo "  2025: $(wc -c < /tmp/ca_cand_2025.csv) bytes"
 
+# ── AU boundaries ───────────────────────────────────────────────
+echo "AU: electorate boundaries..."
+curl -sL --max-time 30 \
+  "https://raw.githubusercontent.com/pmcau/AustralianElectorates/main/Data/Maps/2025/australia_01.geojson" \
+  -o /tmp/au_boundaries_raw.geojson
+echo "  $(wc -c < /tmp/au_boundaries_raw.geojson) bytes"
+
 # ── CA boundaries ───────────────────────────────────────────────
 echo "CA: electoral district boundaries..."
 curl -sL --max-time 30 \
