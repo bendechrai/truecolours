@@ -83,8 +83,14 @@ export async function loadGeoJSONCountry(url, config, width, height) {
   const collection = { type: 'FeatureCollection', features };
   let projection;
 
-  if (config.projection === 'conicConformal') {
-    // Good for Canada — preserves shapes at high latitudes
+  if (config.projection === 'conicEqualArea') {
+    // Albers equal-area conic — ideal for Canada dot density maps
+    // (preserves area so dots represent equal geographic area)
+    projection = d3.geoConicEqualArea()
+      .rotate([96, 0])
+      .parallels([50, 70])
+      .fitSize([width, height], collection);
+  } else if (config.projection === 'conicConformal') {
     projection = d3.geoConicConformal()
       .rotate([96, 0])
       .parallels([49, 77])

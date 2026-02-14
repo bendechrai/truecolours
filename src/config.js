@@ -85,11 +85,11 @@ export const COUNTRIES = {
       { id: 'oth', name: 'Other', colour: '#999999' },
     ],
     nonVoterColour: '#CFCFCF',
-    projection: 'conicConformal',
+    projection: 'conicEqualArea',
     boundaryUrl: './data/ca-boundaries.geojson',
     boundaryType: 'geojson',
     nameProperty: 'name',
-    aspectRatio: 0.75,
+    aspectRatio: 0.8,
     dataSources: [
       { name: 'Elections Canada', url: 'https://www.elections.ca/' },
       { name: 'Canadian Federal Election Data', url: 'https://github.com/bwbecker/cdnFedElectionData' },
