@@ -106,8 +106,8 @@ async function switchCountry(id) {
     // Load real election data
     state.electionData = await loadElectionData(id, config, state.geoData.features);
 
-    // Compute dot positions (this is the expensive part)
-    state.dots = computeDots(state.geoData.features, state.geoData.projection, config.dotBudget);
+    // Compute dot positions on hex grid
+    state.dots = computeDots(state.geoData.features, state.geoData.projection, config.dotBudget, width, height);
 
     // Build hit-test canvas
     state.hitTest = buildHitTestCanvas(

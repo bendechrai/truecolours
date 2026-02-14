@@ -1,8 +1,7 @@
 // Two-pass dot placement, colouring, canvas rendering, and hit-test ID canvas
 
 import * as d3 from 'd3';
-import { measureFeatureArea } from './geoLoader.js';
-import { DOT_RADIUS_DESKTOP, DOT_RADIUS_MOBILE, MOBILE_BREAKPOINT, TEST_CANVAS_SIZE } from './config.js';
+import { DOT_RADIUS_DESKTOP, DOT_RADIUS_MOBILE, MOBILE_BREAKPOINT } from './config.js';
 
 // Seeded PRNG (mulberry32)
 function mulberry32(seed) {
@@ -27,86 +26,76 @@ function seededShuffle(arr, seed) {
 }
 
 /**
- * Pass 1 & 2: Compute dot positions for all features.
+ * Place dots on a hexagonal grid across the map.
  *
- * 1. Measure actual rendered area of each feature
- * 2. Distribute global dot budget proportionally by area
- * 3. Place dots via rejection sampling inside each feature
+ * 1. Rasterise all features into a feature-ID canvas
+ * 2. Calculate hex spacing to hit the dot budget
+ * 3. Walk the hex grid; for each cell centre inside a feature, emit a dot
+ *
+ * Every dot occupies its own grid cell so nothing is hidden.
  *
  * Returns: [{ featureIndex, x, y }]  (screen-space coordinates)
  */
-export function computeDots(features, projection, dotBudget) {
-  // Pass 1: measure areas
-  const areas = features.map((f) => measureFeatureArea(f, projection));
-  const totalArea = areas.reduce((sum, a) => sum + a.pixelArea, 0);
+export function computeDots(features, projection, dotBudget, width, height) {
+  if (!width || !height) return [];
 
-  if (totalArea === 0) return [];
-
-  // Pass 2: distribute dots and place via rejection sampling
-  const allDots = [];
-  const pathGen = d3.geoPath(projection);
+  // Step 1: build a feature-ID raster (same idea as the hit-test canvas)
+  const idCanvas = new OffscreenCanvas(width, height);
+  const idCtx = idCanvas.getContext('2d', { willReadFrequently: true });
+  const pathGen = d3.geoPath(projection, idCtx);
 
   for (let i = 0; i < features.length; i++) {
-    const { pixelArea, bounds } = areas[i];
-    if (pixelArea <= 0) continue;
+    const r = (i + 1) & 0xff;
+    const g = ((i + 1) >> 8) & 0xff;
+    const b = ((i + 1) >> 16) & 0xff;
+    idCtx.fillStyle = `rgb(${r},${g},${b})`;
+    idCtx.beginPath();
+    pathGen(features[i]);
+    idCtx.fill();
+  }
 
-    const share = pixelArea / totalArea;
-    const numDots = Math.max(1, Math.round(share * dotBudget));
+  const idData = idCtx.getImageData(0, 0, width, height).data;
 
-    const bx = bounds[0][0];
-    const by = bounds[0][1];
-    const bw = bounds[1][0] - bounds[0][0];
-    const bh = bounds[1][1] - bounds[0][1];
+  // Step 2: count filled pixels to calculate hex spacing
+  let filledPixels = 0;
+  for (let i = 3; i < idData.length; i += 4) {
+    if (idData[i] > 0) filledPixels++;
+  }
 
-    if (bw <= 0 || bh <= 0) continue;
+  if (filledPixels === 0) return [];
 
-    // Rasterise this feature for point-in-polygon testing
-    const scale = Math.min(TEST_CANVAS_SIZE / bw, TEST_CANVAS_SIZE / bh);
-    const testCanvas = new OffscreenCanvas(TEST_CANVAS_SIZE, TEST_CANVAS_SIZE);
-    const testCtx = testCanvas.getContext('2d');
-    testCtx.save();
-    testCtx.scale(scale, scale);
-    testCtx.translate(-bx, -by);
-    testCtx.fillStyle = '#000';
-    testCtx.beginPath();
-    d3.geoPath(projection, testCtx)(features[i]);
-    testCtx.fill();
-    testCtx.restore();
+  // Each hex cell covers s * rowH area where rowH = s * √3/2
+  // filledPixels / (s * rowH) ≈ dotBudget  →  s = √(filledPixels / (dotBudget * √3/2))
+  const SQRT3_OVER_2 = Math.sqrt(3) / 2;
+  const s = Math.sqrt(filledPixels / (dotBudget * SQRT3_OVER_2));
+  const rowH = s * SQRT3_OVER_2;
 
-    const testData = testCtx.getImageData(0, 0, TEST_CANVAS_SIZE, TEST_CANVAS_SIZE).data;
+  // Step 3: walk the hex grid
+  const dots = [];
+  const rows = Math.ceil(height / rowH);
+  const cols = Math.ceil(width / s) + 1;
 
-    // Seeded rejection sampling
-    let seed = i * 7919 + 12345;
-    function lcg() {
-      seed = (seed * 1664525 + 1013904223) & 0xffffffff;
-      return (seed >>> 0) / 4294967296;
-    }
+  for (let row = 0; row < rows; row++) {
+    const y = row * rowH;
+    const xOff = (row & 1) * s * 0.5;
+    for (let col = 0; col < cols; col++) {
+      const x = col * s + xOff;
 
-    let placed = 0;
-    let attempts = 0;
-    const maxAttempts = numDots * 100;
+      const px = Math.round(x);
+      const py = Math.round(y);
+      if (px < 0 || px >= width || py < 0 || py >= height) continue;
 
-    while (placed < numDots && attempts < maxAttempts) {
-      attempts++;
-      const rx = lcg();
-      const ry = lcg();
-      const sx = bx + rx * bw; // screen x
-      const sy = by + ry * bh; // screen y
+      const offset = (py * width + px) * 4;
+      if (idData[offset + 3] === 0) continue; // outside all features
 
-      // Check against rasterised mask
-      const tx = Math.floor(rx * bw * scale);
-      const ty = Math.floor(ry * bh * scale);
-      if (tx < 0 || tx >= TEST_CANVAS_SIZE || ty < 0 || ty >= TEST_CANVAS_SIZE) continue;
+      const featureIndex =
+        (idData[offset] | (idData[offset + 1] << 8) | (idData[offset + 2] << 16)) - 1;
 
-      const alpha = testData[(ty * TEST_CANVAS_SIZE + tx) * 4 + 3];
-      if (alpha === 0) continue;
-
-      allDots.push({ featureIndex: i, x: sx, y: sy });
-      placed++;
+      dots.push({ featureIndex, x, y });
     }
   }
 
-  return allDots;
+  return dots;
 }
 
 /**
