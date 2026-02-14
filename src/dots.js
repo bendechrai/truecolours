@@ -51,7 +51,7 @@ export function computeDots(features, projection, dotBudget, width, height) {
     idCtx.fillStyle = `rgb(${r},${g},${b})`;
     idCtx.beginPath();
     pathGen(features[i]);
-    idCtx.fill();
+    idCtx.fill('evenodd');
   }
 
   const idData = idCtx.getImageData(0, 0, width, height).data;
@@ -255,7 +255,7 @@ export function buildHitTestCanvas(features, projection, width, height, dpr) {
     ctx.fillStyle = `rgb(${r},${g},${b})`;
     ctx.beginPath();
     pathGen(features[i]);
-    ctx.fill();
+    ctx.fill('evenodd');
   }
 
   const imageData = ctx.getImageData(0, 0, width * dpr, height * dpr);
