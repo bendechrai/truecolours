@@ -5,8 +5,10 @@ import * as d3 from 'd3';
 // Coverage: fraction of map area allocated to total symbol area (sum of all pies)
 const SYMBOL_COVERAGE = 0.10;
 
-// Minimum symbol radius in screen pixels (so tiny features stay visible)
-const SYMBOL_MIN_RADIUS = 1.5;
+// No minimum radius — area is purely proportional to eligible voters.
+// Sub-pixel counties render as faint anti-aliased dots, which is correct:
+// a county with 500 voters out of 240M should be nearly invisible.
+const SYMBOL_MIN_RADIUS = 0;
 
 // Pies smaller than this (screen px) are drawn as a single blended dot
 const BLEND_RADIUS = 2;
