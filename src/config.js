@@ -6,7 +6,7 @@ export const COUNTRIES = {
     flag: '\u{1F1FA}\u{1F1F8}',
     isoCode: 840,
     elections: [2000, 2004, 2008, 2012, 2016, 2020, 2024],
-    dotBudget: 30000,
+    dotBudget: 50000,
     parties: [
       { id: 'dem', name: 'Democrat', colour: '#1375B7' },
       { id: 'rep', name: 'Republican', colour: '#E81B23' },

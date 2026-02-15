@@ -116,6 +116,10 @@ export function colourDots(dots, electionData, features, parties, year, showNonV
 
   const colours = new Uint8Array(dots.length * 3);
 
+  // Threshold: features with this many dots or fewer get blended colours
+  // so that even a single dot faithfully represents the vote split.
+  const BLEND_THRESHOLD = 6;
+
   for (const [fi, dotIndices] of featureGroups) {
     const regionData = yearData[fi];
     if (!regionData) continue;
@@ -123,46 +127,73 @@ export function colourDots(dots, electionData, features, parties, year, showNonV
     const { votes, eligible } = regionData;
     const totalVotes = Object.values(votes).reduce((a, b) => a + b, 0);
     const nonVoters = eligible - totalVotes;
-
-    // Build colour assignments
-    const colourAssignments = [];
     const denominator = showNonVoters ? eligible : totalVotes;
+    if (denominator === 0) continue;
 
-    for (const party of parties) {
-      const count = votes[party.id] || 0;
-      const share = count / denominator;
-      const numDots = Math.round(share * dotIndices.length);
-      const rgb = hexToRgb(party.colour);
-      for (let j = 0; j < numDots; j++) {
-        colourAssignments.push(rgb);
+    if (dotIndices.length <= BLEND_THRESHOLD) {
+      // Blend to weighted average colour — each dot shows the proportional mix
+      const blended = [0, 0, 0];
+      for (const party of parties) {
+        const share = (votes[party.id] || 0) / denominator;
+        const rgb = hexToRgb(party.colour);
+        blended[0] += share * rgb[0];
+        blended[1] += share * rgb[1];
+        blended[2] += share * rgb[2];
       }
-    }
-
-    if (showNonVoters) {
-      const nonVoterShare = nonVoters / denominator;
-      const numNonVoterDots = Math.round(nonVoterShare * dotIndices.length);
-      const rgb = hexToRgb('#CFCFCF');
-      for (let j = 0; j < numNonVoterDots; j++) {
-        colourAssignments.push(rgb);
+      if (showNonVoters) {
+        const nvShare = nonVoters / denominator;
+        const nvRgb = hexToRgb('#CFCFCF');
+        blended[0] += nvShare * nvRgb[0];
+        blended[1] += nvShare * nvRgb[1];
+        blended[2] += nvShare * nvRgb[2];
       }
-    }
+      const br = Math.round(blended[0]);
+      const bg = Math.round(blended[1]);
+      const bb = Math.round(blended[2]);
+      for (const di of dotIndices) {
+        colours[di * 3] = br;
+        colours[di * 3 + 1] = bg;
+        colours[di * 3 + 2] = bb;
+      }
+    } else {
+      // Enough dots — assign each to a single party for the speckled effect
+      const colourAssignments = [];
+      for (const party of parties) {
+        const count = votes[party.id] || 0;
+        const share = count / denominator;
+        const numDots = Math.round(share * dotIndices.length);
+        const rgb = hexToRgb(party.colour);
+        for (let j = 0; j < numDots; j++) {
+          colourAssignments.push(rgb);
+        }
+      }
 
-    // Pad or trim to match dot count
-    while (colourAssignments.length < dotIndices.length) {
-      colourAssignments.push(colourAssignments[colourAssignments.length - 1] || [0, 0, 0]);
-    }
-    colourAssignments.length = dotIndices.length;
+      if (showNonVoters) {
+        const nonVoterShare = nonVoters / denominator;
+        const numNonVoterDots = Math.round(nonVoterShare * dotIndices.length);
+        const rgb = hexToRgb('#CFCFCF');
+        for (let j = 0; j < numNonVoterDots; j++) {
+          colourAssignments.push(rgb);
+        }
+      }
 
-    // Shuffle colours deterministically (seeded by year + feature index)
-    const shuffled = seededShuffle(colourAssignments, year * 10000 + fi);
+      // Pad or trim to match dot count
+      while (colourAssignments.length < dotIndices.length) {
+        colourAssignments.push(colourAssignments[colourAssignments.length - 1] || [0, 0, 0]);
+      }
+      colourAssignments.length = dotIndices.length;
 
-    // Assign to output
-    for (let j = 0; j < dotIndices.length; j++) {
-      const di = dotIndices[j];
-      const rgb = shuffled[j];
-      colours[di * 3] = rgb[0];
-      colours[di * 3 + 1] = rgb[1];
-      colours[di * 3 + 2] = rgb[2];
+      // Shuffle colours deterministically (seeded by year + feature index)
+      const shuffled = seededShuffle(colourAssignments, year * 10000 + fi);
+
+      // Assign to output
+      for (let j = 0; j < dotIndices.length; j++) {
+        const di = dotIndices[j];
+        const rgb = shuffled[j];
+        colours[di * 3] = rgb[0];
+        colours[di * 3 + 1] = rgb[1];
+        colours[di * 3 + 2] = rgb[2];
+      }
     }
   }
 
