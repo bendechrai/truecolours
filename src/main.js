@@ -137,7 +137,7 @@ async function switchCountry(id) {
     await new Promise((r) => requestAnimationFrame(r));
 
     // Compute dot positions on hex grid (step 3 of 4)
-    state.dots = computeDots(state.geoData.features, state.geoData.projection, config.dotBudget, width, height);
+    state.dots = computeDots(state.geoData.features, state.geoData.projection, config.dotBudget, width, height, state.electionData, config.elections);
     updateLoadingProgress('Rendering... 75%');
     await new Promise((r) => requestAnimationFrame(r));
 

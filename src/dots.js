@@ -26,17 +26,20 @@ function seededShuffle(arr, seed) {
 }
 
 /**
- * Place dots on a hexagonal grid across the map.
+ * Place dots proportional to each feature's eligible voter count.
  *
  * 1. Rasterise all features into a feature-ID canvas
- * 2. Calculate hex spacing to hit the dot budget
- * 3. Walk the hex grid; for each cell centre inside a feature, emit a dot
+ * 2. Collect pixel coordinates per feature
+ * 3. Allocate dots to features proportional to eligible voters (latest year)
+ * 4. Randomly sample that many pixels per feature (seeded for determinism)
  *
- * Every dot occupies its own grid cell so nothing is hidden.
+ * Dense urban areas receive many dots; sparse rural areas receive few —
+ * so the visual weight matches the actual number of voters, not the
+ * geographic size of the region.
  *
  * Returns: [{ featureIndex, x, y }]  (screen-space coordinates)
  */
-export function computeDots(features, projection, dotBudget, width, height) {
+export function computeDots(features, projection, dotBudget, width, height, electionData, elections) {
   if (!width || !height) return [];
 
   // Step 1: build a feature-ID raster (same idea as the hit-test canvas)
@@ -56,42 +59,74 @@ export function computeDots(features, projection, dotBudget, width, height) {
 
   const idData = idCtx.getImageData(0, 0, width, height).data;
 
-  // Step 2: count filled pixels to calculate hex spacing
-  let filledPixels = 0;
-  for (let i = 3; i < idData.length; i += 4) {
-    if (idData[i] > 0) filledPixels++;
+  // Step 2: collect pixel positions per feature
+  const featurePixels = new Map(); // featureIndex → [pixelIndex, …]
+  const totalPixels = width * height;
+
+  for (let i = 0; i < totalPixels; i++) {
+    const offset = i * 4;
+    if (idData[offset + 3] === 0) continue;
+    const fi = (idData[offset] | (idData[offset + 1] << 8) | (idData[offset + 2] << 16)) - 1;
+    if (!featurePixels.has(fi)) featurePixels.set(fi, []);
+    featurePixels.get(fi).push(i);
   }
 
-  if (filledPixels === 0) return [];
+  if (featurePixels.size === 0) return [];
 
-  // Each hex cell covers s * rowH area where rowH = s * √3/2
-  // filledPixels / (s * rowH) ≈ dotBudget  →  s = √(filledPixels / (dotBudget * √3/2))
-  const SQRT3_OVER_2 = Math.sqrt(3) / 2;
-  const s = Math.sqrt(filledPixels / (dotBudget * SQRT3_OVER_2));
-  const rowH = s * SQRT3_OVER_2;
+  // Step 3: determine dot allocation per feature from eligible voter counts.
+  // Use the latest election year that has data; fall back to geographic if
+  // no election data is available.
+  let yearData = null;
+  if (electionData && elections) {
+    for (let yi = elections.length - 1; yi >= 0; yi--) {
+      const yd = electionData[elections[yi]];
+      if (yd && Object.keys(yd).length > 0) { yearData = yd; break; }
+    }
+  }
 
-  // Step 3: walk the hex grid
+  let totalEligible = 0;
+  if (yearData) {
+    for (const fi of featurePixels.keys()) {
+      totalEligible += yearData[fi]?.eligible || 0;
+    }
+  }
+
+  // If we have no voter data, fall back to uniform geographic placement
+  const usePopulation = totalEligible > 0;
+
+  // Step 4: sample dots per feature
+  const rng = mulberry32(42);
   const dots = [];
-  const rows = Math.ceil(height / rowH);
-  const cols = Math.ceil(width / s) + 1;
 
-  for (let row = 0; row < rows; row++) {
-    const y = row * rowH;
-    const xOff = (row & 1) * s * 0.5;
-    for (let col = 0; col < cols; col++) {
-      const x = col * s + xOff;
+  for (const [fi, pixels] of featurePixels) {
+    let targetDots;
 
-      const px = Math.round(x);
-      const py = Math.round(y);
-      if (px < 0 || px >= width || py < 0 || py >= height) continue;
+    if (usePopulation) {
+      const eligible = yearData[fi]?.eligible || 0;
+      targetDots = Math.round((eligible / totalEligible) * dotBudget);
+      // Ensure at least 1 dot for any feature with voters
+      if (eligible > 0 && targetDots === 0) targetDots = 1;
+    } else {
+      // Geographic fallback: dots proportional to pixel area
+      targetDots = Math.round((pixels.length / totalPixels) * dotBudget);
+      if (targetDots === 0 && pixels.length > 0) targetDots = 1;
+    }
 
-      const offset = (py * width + px) * 4;
-      if (idData[offset + 3] === 0) continue; // outside all features
+    // Cap at available pixels (each pixel can hold at most one dot)
+    targetDots = Math.min(targetDots, pixels.length);
 
-      const featureIndex =
-        (idData[offset] | (idData[offset + 1] << 8) | (idData[offset + 2] << 16)) - 1;
+    // Fisher-Yates partial shuffle to pick targetDots random pixels
+    const arr = pixels.slice();
+    for (let i = 0; i < targetDots; i++) {
+      const j = i + Math.floor(rng() * (arr.length - i));
+      const tmp = arr[i]; arr[i] = arr[j]; arr[j] = tmp;
+    }
 
-      dots.push({ featureIndex, x, y });
+    for (let i = 0; i < targetDots; i++) {
+      const px = arr[i] % width;
+      const py = (arr[i] / width) | 0;
+      // Small jitter for a natural scattered look
+      dots.push({ featureIndex: fi, x: px + rng() * 0.6 - 0.3, y: py + rng() * 0.6 - 0.3 });
     }
   }
 

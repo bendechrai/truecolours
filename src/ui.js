@@ -371,10 +371,10 @@ function buildExplainer() {
       ', these maps are effectively visualisations of population density, not political sentiment.',
     ]),
     el('p', {}, [
-      'True Colours takes a different approach: it fills every region with dots at ',
-      'uniform geographic density (the same number of dots per square kilometre everywhere), ',
-      'then colours each dot proportionally to the actual vote. The result is a map where ',
-      'every vote is visible and no vote is hidden.',
+      'True Colours takes a different approach: each region receives dots proportional to its ',
+      'number of eligible voters \u2014 not its geographic size \u2014 then colours each dot by the actual ',
+      'vote share. Dense urban areas get many tightly packed dots; sparse rural areas get few. ',
+      'The result is a map where every vote carries equal visual weight.',
     ]),
     el('h3', {}, ['The Non-Voter Toggle']),
     el('p', {}, [
