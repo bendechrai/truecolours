@@ -119,16 +119,16 @@ export function colourSymbols(symbols, electionData, features, parties, year, sh
 /**
  * Render pie-chart symbols to a canvas.
  *
- * Draws largest symbols first (behind), smallest on top, so dense urban
- * clusters remain legible even when pies overlap.
+ * Draws smallest symbols first (behind), largest on top, so the most
+ * populous areas dominate visually when pies overlap.
  */
 export function renderSymbols(ctx, symbols, pieData, dpr) {
   ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height);
   if (!symbols.length) return;
 
-  // Draw order: largest behind, smallest in front
+  // Draw order: smallest first, largest on top
   const order = symbols.map((_, i) => i);
-  order.sort((a, b) => symbols[b].radius - symbols[a].radius);
+  order.sort((a, b) => symbols[a].radius - symbols[b].radius);
 
   for (const idx of order) {
     const sym = symbols[idx];
