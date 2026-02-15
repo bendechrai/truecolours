@@ -6,7 +6,7 @@ import * as d3 from 'd3';
 import { COUNTRIES, DEFAULT_COUNTRY, RESIZE_DEBOUNCE } from './config.js';
 import { loadUS, loadGeoJSONCountry } from './geoLoader.js';
 import { loadElectionData } from './electionData.js';
-import { computeDots, colourDots, renderDots, renderBorders, buildHitTestCanvas } from './dots.js';
+import { computeSymbols, colourSymbols, renderSymbols, renderBorders, buildHitTestCanvas } from './dots.js';
 import {
   buildUI,
   updateLegend,
@@ -21,8 +21,8 @@ const state = {
   country: DEFAULT_COUNTRY,
   yearIndex: 0,
   showNonVoters: false,
-  dots: [],
-  colours: null,
+  symbols: [],
+  pieData: null,
   geoData: null,
   electionData: null,
   hitTest: null,
@@ -136,8 +136,8 @@ async function switchCountry(id) {
     updateLoadingProgress('Placing dots... 50%');
     await new Promise((r) => requestAnimationFrame(r));
 
-    // Compute dot positions on hex grid (step 3 of 4)
-    state.dots = computeDots(state.geoData.features, state.geoData.projection, config.dotBudget, width, height, state.electionData, config.elections);
+    // Compute pie-chart symbols (step 3 of 4)
+    state.symbols = computeSymbols(state.geoData.features, state.geoData.projection, width, height, state.electionData, config.elections);
     updateLoadingProgress('Rendering... 75%');
     await new Promise((r) => requestAnimationFrame(r));
 
@@ -191,8 +191,8 @@ function colourAndRender() {
   const config = COUNTRIES[state.country];
   const year = config.elections[state.yearIndex];
 
-  state.colours = colourDots(
-    state.dots,
+  state.pieData = colourSymbols(
+    state.symbols,
     state.electionData,
     state.geoData.features,
     config.parties,
@@ -201,7 +201,7 @@ function colourAndRender() {
   );
 
   const dotCtx = ui.dotCanvas.getContext('2d');
-  renderDots(dotCtx, state.dots, state.colours, dpr);
+  renderSymbols(dotCtx, state.symbols, state.pieData, dpr);
 }
 
 // ─── Canvas setup ──────────────────────────────────────────────────

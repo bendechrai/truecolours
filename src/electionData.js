@@ -28,7 +28,7 @@ export async function loadElectionData(countryId, config, features) {
   // Build lookup: regionKey → featureIndex
   const keyToIndex = buildKeyMap(countryId, features);
 
-  // Transform into the format colourDots expects
+  // Transform into the format colourSymbols expects
   const data = {};
   const parties = config.parties;
 

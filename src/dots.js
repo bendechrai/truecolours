@@ -1,81 +1,33 @@
-// Two-pass dot placement, colouring, canvas rendering, and hit-test ID canvas
+// Proportional pie-chart symbols, border rendering, and hit-test ID canvas
 
 import * as d3 from 'd3';
-import { DOT_RADIUS_DESKTOP, DOT_RADIUS_MOBILE, MOBILE_BREAKPOINT } from './config.js';
 
-// Seeded PRNG (mulberry32)
-function mulberry32(seed) {
-  return function () {
-    seed |= 0;
-    seed = (seed + 0x6d2b79f5) | 0;
-    let t = Math.imul(seed ^ (seed >>> 15), 1 | seed);
-    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-  };
-}
+// Coverage: fraction of map area allocated to total symbol area (sum of all pies)
+const SYMBOL_COVERAGE = 0.10;
 
-// Fisher-Yates shuffle with a seed
-function seededShuffle(arr, seed) {
-  const rng = mulberry32(seed);
-  const a = arr.slice();
-  for (let i = a.length - 1; i > 0; i--) {
-    const j = Math.floor(rng() * (i + 1));
-    [a[i], a[j]] = [a[j], a[i]];
-  }
-  return a;
-}
+// Minimum symbol radius in screen pixels (so tiny features stay visible)
+const SYMBOL_MIN_RADIUS = 1.5;
+
+// Pies smaller than this (screen px) are drawn as a single blended dot
+const BLEND_RADIUS = 2;
+
+// ─── Compute symbols ─────────────────────────────────────────────
 
 /**
- * Place dots proportional to each feature's eligible voter count.
+ * Place one proportional pie-chart symbol per feature.
  *
- * 1. Rasterise all features into a feature-ID canvas
- * 2. Collect pixel coordinates per feature
- * 3. Allocate dots to features proportional to eligible voters (latest year)
- * 4. Randomly sample that many pixels per feature (seeded for determinism)
+ * Each symbol is positioned at the projected centroid of its feature.
+ * Radius is set so that circle AREA is proportional to eligible voters.
+ * Dense urban areas get large pies; sparse rural areas get small dots.
  *
- * Dense urban areas receive many dots; sparse rural areas receive few —
- * so the visual weight matches the actual number of voters, not the
- * geographic size of the region.
- *
- * Returns: [{ featureIndex, x, y }]  (screen-space coordinates)
+ * Returns: [{ featureIndex, x, y, radius }]  (screen-space coordinates)
  */
-export function computeDots(features, projection, dotBudget, width, height, electionData, elections) {
-  if (!width || !height) return [];
+export function computeSymbols(features, projection, width, height, electionData, elections) {
+  if (!width || !height || !features.length) return [];
 
-  // Step 1: build a feature-ID raster (same idea as the hit-test canvas)
-  const idCanvas = new OffscreenCanvas(width, height);
-  const idCtx = idCanvas.getContext('2d', { willReadFrequently: true });
-  const pathGen = d3.geoPath(projection, idCtx);
+  const pathGen = d3.geoPath(projection);
 
-  for (let i = 0; i < features.length; i++) {
-    const r = (i + 1) & 0xff;
-    const g = ((i + 1) >> 8) & 0xff;
-    const b = ((i + 1) >> 16) & 0xff;
-    idCtx.fillStyle = `rgb(${r},${g},${b})`;
-    idCtx.beginPath();
-    pathGen(features[i]);
-    idCtx.fill('evenodd');
-  }
-
-  const idData = idCtx.getImageData(0, 0, width, height).data;
-
-  // Step 2: collect pixel positions per feature
-  const featurePixels = new Map(); // featureIndex → [pixelIndex, …]
-  const totalPixels = width * height;
-
-  for (let i = 0; i < totalPixels; i++) {
-    const offset = i * 4;
-    if (idData[offset + 3] === 0) continue;
-    const fi = (idData[offset] | (idData[offset + 1] << 8) | (idData[offset + 2] << 16)) - 1;
-    if (!featurePixels.has(fi)) featurePixels.set(fi, []);
-    featurePixels.get(fi).push(i);
-  }
-
-  if (featurePixels.size === 0) return [];
-
-  // Step 3: determine dot allocation per feature from eligible voter counts.
-  // Use the latest election year that has data; fall back to geographic if
-  // no election data is available.
+  // Find the latest year with election data
   let yearData = null;
   if (electionData && elections) {
     for (let yi = elections.length - 1; yi >= 0; yi--) {
@@ -84,180 +36,146 @@ export function computeDots(features, projection, dotBudget, width, height, elec
     }
   }
 
+  // Gather per-feature eligible voter counts
   let totalEligible = 0;
-  if (yearData) {
-    for (const fi of featurePixels.keys()) {
-      totalEligible += yearData[fi]?.eligible || 0;
-    }
+  const eligibles = new Array(features.length);
+  for (let i = 0; i < features.length; i++) {
+    const e = yearData?.[i]?.eligible || 0;
+    eligibles[i] = e;
+    totalEligible += e;
   }
 
-  // If we have no voter data, fall back to uniform geographic placement
-  const usePopulation = totalEligible > 0;
+  if (totalEligible === 0) return [];
 
-  // Step 4: sample dots per feature
-  const rng = mulberry32(42);
-  const dots = [];
+  // Area budget: the total circle area across all symbols
+  const mapArea = width * height;
+  const totalSymbolArea = mapArea * SYMBOL_COVERAGE;
 
-  for (const [fi, pixels] of featurePixels) {
-    let targetDots;
+  // Build one symbol per feature
+  const symbols = [];
+  for (let i = 0; i < features.length; i++) {
+    if (eligibles[i] === 0) continue;
 
-    if (usePopulation) {
-      const eligible = yearData[fi]?.eligible || 0;
-      targetDots = Math.round((eligible / totalEligible) * dotBudget);
-      // Ensure at least 1 dot for any feature with voters
-      if (eligible > 0 && targetDots === 0) targetDots = 1;
-    } else {
-      // Geographic fallback: dots proportional to pixel area
-      targetDots = Math.round((pixels.length / totalPixels) * dotBudget);
-      if (targetDots === 0 && pixels.length > 0) targetDots = 1;
-    }
+    const centroid = pathGen.centroid(features[i]);
+    if (!centroid || isNaN(centroid[0]) || isNaN(centroid[1])) continue;
 
-    // Cap at available pixels (each pixel can hold at most one dot)
-    targetDots = Math.min(targetDots, pixels.length);
+    const area = (eligibles[i] / totalEligible) * totalSymbolArea;
+    const radius = Math.max(Math.sqrt(area / Math.PI), SYMBOL_MIN_RADIUS);
 
-    // Fisher-Yates partial shuffle to pick targetDots random pixels
-    const arr = pixels.slice();
-    for (let i = 0; i < targetDots; i++) {
-      const j = i + Math.floor(rng() * (arr.length - i));
-      const tmp = arr[i]; arr[i] = arr[j]; arr[j] = tmp;
-    }
-
-    for (let i = 0; i < targetDots; i++) {
-      const px = arr[i] % width;
-      const py = (arr[i] / width) | 0;
-      // Small jitter for a natural scattered look
-      dots.push({ featureIndex: fi, x: px + rng() * 0.6 - 0.3, y: py + rng() * 0.6 - 0.3 });
-    }
+    symbols.push({ featureIndex: i, x: centroid[0], y: centroid[1], radius });
   }
 
-  return dots;
+  return symbols;
 }
 
+// ─── Colour symbols ──────────────────────────────────────────────
+
 /**
- * Colour dots based on election data for a given year.
- * Returns a typed array of RGB colours for each dot: Uint8Array of length dots.length * 3
+ * Compute pie-chart slices for each symbol for a given election year.
+ *
+ * Returns an array parallel to `symbols`.  Each element is:
+ *   { slices: [{ startAngle, endAngle, r, g, b }] }
  */
-export function colourDots(dots, electionData, features, parties, year, showNonVoters) {
+export function colourSymbols(symbols, electionData, features, parties, year, showNonVoters) {
   const yearData = electionData[year];
-  if (!yearData) return new Uint8Array(dots.length * 3);
+  if (!yearData) return symbols.map(() => ({ slices: [] }));
 
-  // Group dots by feature index
-  const featureGroups = new Map();
-  for (let i = 0; i < dots.length; i++) {
-    const fi = dots[i].featureIndex;
-    if (!featureGroups.has(fi)) featureGroups.set(fi, []);
-    featureGroups.get(fi).push(i);
-  }
+  const TWO_PI = Math.PI * 2;
 
-  const colours = new Uint8Array(dots.length * 3);
-
-  // Threshold: features with this many dots or fewer get blended colours
-  // so that even a single dot faithfully represents the vote split.
-  const BLEND_THRESHOLD = 6;
-
-  for (const [fi, dotIndices] of featureGroups) {
-    const regionData = yearData[fi];
-    if (!regionData) continue;
+  return symbols.map((sym) => {
+    const regionData = yearData[sym.featureIndex];
+    if (!regionData) return { slices: [] };
 
     const { votes, eligible } = regionData;
     const totalVotes = Object.values(votes).reduce((a, b) => a + b, 0);
     const nonVoters = eligible - totalVotes;
     const denominator = showNonVoters ? eligible : totalVotes;
-    if (denominator === 0) continue;
+    if (denominator === 0) return { slices: [] };
 
-    if (dotIndices.length <= BLEND_THRESHOLD) {
-      // Blend to weighted average colour — each dot shows the proportional mix
-      const blended = [0, 0, 0];
-      for (const party of parties) {
-        const share = (votes[party.id] || 0) / denominator;
-        const rgb = hexToRgb(party.colour);
-        blended[0] += share * rgb[0];
-        blended[1] += share * rgb[1];
-        blended[2] += share * rgb[2];
-      }
-      if (showNonVoters) {
-        const nvShare = nonVoters / denominator;
-        const nvRgb = hexToRgb('#CFCFCF');
-        blended[0] += nvShare * nvRgb[0];
-        blended[1] += nvShare * nvRgb[1];
-        blended[2] += nvShare * nvRgb[2];
-      }
-      const br = Math.round(blended[0]);
-      const bg = Math.round(blended[1]);
-      const bb = Math.round(blended[2]);
-      for (const di of dotIndices) {
-        colours[di * 3] = br;
-        colours[di * 3 + 1] = bg;
-        colours[di * 3 + 2] = bb;
-      }
-    } else {
-      // Enough dots — assign each to a single party for the speckled effect
-      const colourAssignments = [];
-      for (const party of parties) {
-        const count = votes[party.id] || 0;
-        const share = count / denominator;
-        const numDots = Math.round(share * dotIndices.length);
-        const rgb = hexToRgb(party.colour);
-        for (let j = 0; j < numDots; j++) {
-          colourAssignments.push(rgb);
-        }
-      }
+    const slices = [];
+    let angle = -Math.PI / 2; // start at 12 o'clock
 
-      if (showNonVoters) {
-        const nonVoterShare = nonVoters / denominator;
-        const numNonVoterDots = Math.round(nonVoterShare * dotIndices.length);
-        const rgb = hexToRgb('#CFCFCF');
-        for (let j = 0; j < numNonVoterDots; j++) {
-          colourAssignments.push(rgb);
-        }
-      }
-
-      // Pad or trim to match dot count
-      while (colourAssignments.length < dotIndices.length) {
-        colourAssignments.push(colourAssignments[colourAssignments.length - 1] || [0, 0, 0]);
-      }
-      colourAssignments.length = dotIndices.length;
-
-      // Shuffle colours deterministically (seeded by year + feature index)
-      const shuffled = seededShuffle(colourAssignments, year * 10000 + fi);
-
-      // Assign to output
-      for (let j = 0; j < dotIndices.length; j++) {
-        const di = dotIndices[j];
-        const rgb = shuffled[j];
-        colours[di * 3] = rgb[0];
-        colours[di * 3 + 1] = rgb[1];
-        colours[di * 3 + 2] = rgb[2];
-      }
+    for (const party of parties) {
+      const count = votes[party.id] || 0;
+      if (count <= 0) continue;
+      const endAngle = angle + (count / denominator) * TWO_PI;
+      const rgb = hexToRgb(party.colour);
+      slices.push({ startAngle: angle, endAngle, r: rgb[0], g: rgb[1], b: rgb[2] });
+      angle = endAngle;
     }
-  }
 
-  return colours;
+    if (showNonVoters && nonVoters > 0) {
+      const endAngle = angle + (nonVoters / denominator) * TWO_PI;
+      const rgb = hexToRgb('#CFCFCF');
+      slices.push({ startAngle: angle, endAngle, r: rgb[0], g: rgb[1], b: rgb[2] });
+    }
+
+    return { slices };
+  });
 }
+
+// ─── Render ──────────────────────────────────────────────────────
 
 /**
- * Render dots to a canvas.
+ * Render pie-chart symbols to a canvas.
+ *
+ * Draws largest symbols first (behind), smallest on top, so dense urban
+ * clusters remain legible even when pies overlap.
  */
-export function renderDots(ctx, dots, colours, dpr) {
-  const isMobile = window.innerWidth < MOBILE_BREAKPOINT;
-  const radius = (isMobile ? DOT_RADIUS_MOBILE : DOT_RADIUS_DESKTOP) * dpr;
-
+export function renderSymbols(ctx, symbols, pieData, dpr) {
   ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height);
+  if (!symbols.length) return;
 
-  for (let i = 0; i < dots.length; i++) {
-    const r = colours[i * 3];
-    const g = colours[i * 3 + 1];
-    const b = colours[i * 3 + 2];
+  // Draw order: largest behind, smallest in front
+  const order = symbols.map((_, i) => i);
+  order.sort((a, b) => symbols[b].radius - symbols[a].radius);
 
-    // Skip dots with no election data (unmapped regions default to 0,0,0)
-    if (r === 0 && g === 0 && b === 0) continue;
+  for (const idx of order) {
+    const sym = symbols[idx];
+    const pd = pieData[idx];
+    if (!pd?.slices.length) continue;
 
-    ctx.fillStyle = `rgb(${r},${g},${b})`;
-    ctx.beginPath();
-    ctx.arc(dots[i].x * dpr, dots[i].y * dpr, radius, 0, Math.PI * 2);
-    ctx.fill();
+    const cx = sym.x * dpr;
+    const cy = sym.y * dpr;
+    const r = sym.radius * dpr;
+
+    if (sym.radius < BLEND_RADIUS) {
+      // Too small for visible pie segments — draw a single blended dot
+      let tr = 0, tg = 0, tb = 0;
+      for (const s of pd.slices) {
+        const w = (s.endAngle - s.startAngle) / TWO_PI;
+        tr += w * s.r;
+        tg += w * s.g;
+        tb += w * s.b;
+      }
+      ctx.beginPath();
+      ctx.arc(cx, cy, r, 0, Math.PI * 2);
+      ctx.fillStyle = `rgb(${Math.round(tr)},${Math.round(tg)},${Math.round(tb)})`;
+      ctx.fill();
+    } else {
+      // Draw pie wedges
+      for (const s of pd.slices) {
+        ctx.beginPath();
+        ctx.moveTo(cx, cy);
+        ctx.arc(cx, cy, r, s.startAngle, s.endAngle);
+        ctx.closePath();
+        ctx.fillStyle = `rgb(${s.r},${s.g},${s.b})`;
+        ctx.fill();
+      }
+      // Subtle outline for definition
+      ctx.beginPath();
+      ctx.arc(cx, cy, r, 0, Math.PI * 2);
+      ctx.strokeStyle = 'rgba(0,0,0,0.15)';
+      ctx.lineWidth = 0.5 * dpr;
+      ctx.stroke();
+    }
   }
 }
+
+// Need TWO_PI at module scope for renderSymbols
+const TWO_PI = Math.PI * 2;
+
+// ─── Borders ─────────────────────────────────────────────────────
 
 /**
  * Render region borders and country outline.
@@ -301,6 +219,8 @@ export function renderBorders(ctx, geoData, projection, dpr) {
   ctx.restore();
 }
 
+// ─── Hit-test canvas ─────────────────────────────────────────────
+
 /**
  * Build an offscreen ID canvas for fast hit-testing.
  * Each feature is rendered with a unique colour encoding its index.
@@ -342,6 +262,8 @@ export function buildHitTestCanvas(features, projection, width, height, dpr) {
 
   return { canvas, getFeatureIndex };
 }
+
+// ─── Helpers ─────────────────────────────────────────────────────
 
 function hexToRgb(hex) {
   const n = parseInt(hex.slice(1), 16);

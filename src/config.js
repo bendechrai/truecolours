@@ -6,7 +6,6 @@ export const COUNTRIES = {
     flag: '\u{1F1FA}\u{1F1F8}',
     isoCode: 840,
     elections: [2000, 2004, 2008, 2012, 2016, 2020, 2024],
-    dotBudget: 50000,
     parties: [
       { id: 'dem', name: 'Democrat', colour: '#1375B7' },
       { id: 'rep', name: 'Republican', colour: '#E81B23' },
@@ -29,7 +28,6 @@ export const COUNTRIES = {
     flag: '\u{1F1EC}\u{1F1E7}',
     isoCode: 826,
     elections: [2001, 2005, 2010, 2015, 2017, 2019, 2024],
-    dotBudget: 18000,
     parties: [
       { id: 'con', name: 'Conservative', colour: '#0087DC' },
       { id: 'lab', name: 'Labour', colour: '#DC241F' },
@@ -53,7 +51,6 @@ export const COUNTRIES = {
     flag: '\u{1F1E6}\u{1F1FA}',
     isoCode: 36,
     elections: [2004, 2007, 2010, 2013, 2016, 2019, 2022, 2025],
-    dotBudget: 14000,
     parties: [
       { id: 'coa', name: 'Coalition', colour: '#1C4F9C' },
       { id: 'alp', name: 'Labor', colour: '#DE3533' },
@@ -75,7 +72,6 @@ export const COUNTRIES = {
     flag: '\u{1F1E8}\u{1F1E6}',
     isoCode: 124,
     elections: [2000, 2004, 2006, 2008, 2011, 2015, 2019, 2021, 2025],
-    dotBudget: 20000,
     parties: [
       { id: 'lib', name: 'Liberal', colour: '#D71920' },
       { id: 'con', name: 'Conservative', colour: '#1A4782' },
@@ -99,8 +95,6 @@ export const COUNTRIES = {
 };
 
 export const DEFAULT_COUNTRY = 'us';
-export const DOT_RADIUS_DESKTOP = 1.4;
-export const DOT_RADIUS_MOBILE = 1.0;
 export const MOBILE_BREAKPOINT = 768;
 export const AUTOPLAY_INTERVAL = 2500;
 export const RESIZE_DEBOUNCE = 300;
