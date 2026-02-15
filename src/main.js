@@ -219,7 +219,7 @@ function colourAndRender() {
       const dots = generateDots(
         state.geoData.features, state.geoData.projection,
         state.electionData, config.parties, year,
-        state.showNonVoters, state.hitTest,
+        state.showNonVoters,
       );
       renderDots(dotCtx, dots, dpr);
       break;

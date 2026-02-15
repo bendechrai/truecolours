@@ -204,8 +204,12 @@ export function renderChoropleth(ctx, features, projection, electionData, partie
 }
 
 // ─── Dot Density ─────────────────────────────────────────────────
+// Dots are scattered around each feature's centroid with jitter proportional
+// to the feature's geographic size. This avoids the rejection-sampling problem
+// where tiny urban counties can't physically fit enough dots, which silently
+// drops blue votes and makes the map look red.
 
-export function generateDots(features, projection, electionData, parties, year, showNonVoters, hitTest) {
+export function generateDots(features, projection, electionData, parties, year, showNonVoters) {
   const yearData = electionData[year];
   if (!yearData) return [];
 
@@ -229,12 +233,12 @@ export function generateDots(features, projection, electionData, parties, year, 
     const rd = yearData[i];
     if (!rd) continue;
 
-    const bounds = pathGen.bounds(features[i]);
-    const [x0, y0] = bounds[0];
-    const [x1, y1] = bounds[1];
-    const bw = x1 - x0;
-    const bh = y1 - y0;
-    if (bw <= 0 || bh <= 0) continue;
+    const centroid = pathGen.centroid(features[i]);
+    if (!centroid || isNaN(centroid[0]) || isNaN(centroid[1])) continue;
+
+    // Jitter radius = equivalent circle radius of the projected area
+    const area = pathGen.area(features[i]);
+    const jitter = Math.sqrt(area / Math.PI);
 
     // Seeded RNG per feature for deterministic placement
     const rng = mulberry32(i * 31337 + year);
@@ -254,16 +258,15 @@ export function generateDots(features, projection, electionData, parties, year, 
       const numDots = Math.round(count / votersPerDot);
       if (numDots === 0) continue;
       const rgb = hexToRgb(colour);
-      let placed = 0, attempts = 0;
-      const maxAttempts = numDots * 50;
-      while (placed < numDots && attempts < maxAttempts) {
-        const x = x0 + rng() * bw;
-        const y = y0 + rng() * bh;
-        if (hitTest.getFeatureIndex(x, y) === i) {
-          dots.push({ x, y, r: rgb[0], g: rgb[1], b: rgb[2] });
-          placed++;
-        }
-        attempts++;
+      for (let d = 0; d < numDots; d++) {
+        // Uniform distribution within a circle around the centroid
+        const angle = rng() * TWO_PI;
+        const r = jitter * Math.sqrt(rng());
+        dots.push({
+          x: centroid[0] + r * Math.cos(angle),
+          y: centroid[1] + r * Math.sin(angle),
+          r: rgb[0], g: rgb[1], b: rgb[2],
+        });
       }
     }
   }

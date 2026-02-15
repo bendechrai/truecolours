@@ -367,7 +367,7 @@ function buildExplainer() {
       ]),
       el('figure', { className: 'map-example' }, [
         el('img', {
-          src: 'https://upload.wikimedia.org/wikipedia/commons/thumb/a/ac/Canada_Election_2019_Results_Map.svg/600px-Canada_Election_2019_Results_Map.svg.png',
+          src: 'https://upload.wikimedia.org/wikipedia/commons/thumb/b/b0/Canada_Election_2019_Results_Map_%28Simple%29.svg/600px-Canada_Election_2019_Results_Map_%28Simple%29.svg.png',
           alt: 'Canada 2019 federal election map \u2014 Liberals won government but the map appears overwhelmingly Conservative blue',
           loading: 'lazy',
         }),
