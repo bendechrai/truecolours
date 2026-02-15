@@ -451,6 +451,112 @@ export function renderAlpha(ctx, features, projection, electionData, parties, ye
   ctx.restore();
 }
 
+// ─── Non-contiguous Cartogram ─────────────────────────────────────
+// Each feature is scaled around its centroid so that its visual area
+// is proportional to eligible voters.  Returns per-feature { scale, cx, cy }.
+
+export function computeCartogramScales(features, projection, electionData, elections) {
+  const pathGen = d3.geoPath(projection);
+
+  // Use latest election year with data for stable sizing
+  let yearData = null;
+  if (electionData && elections) {
+    for (let yi = elections.length - 1; yi >= 0; yi--) {
+      const yd = electionData[elections[yi]];
+      if (yd && Object.keys(yd).length > 0) { yearData = yd; break; }
+    }
+  }
+
+  let totalEligible = 0;
+  let totalGeoArea = 0;
+  const featureInfo = [];
+
+  for (let i = 0; i < features.length; i++) {
+    const geoArea = pathGen.area(features[i]);
+    const eligible = yearData?.[i]?.eligible || 0;
+    totalEligible += eligible;
+    totalGeoArea += geoArea;
+    const centroid = pathGen.centroid(features[i]);
+    featureInfo.push({ geoArea, eligible, centroid });
+  }
+
+  if (totalEligible === 0 || totalGeoArea === 0) {
+    return features.map(() => ({ scale: 1, cx: 0, cy: 0 }));
+  }
+
+  return featureInfo.map(fd => {
+    const cx = (fd.centroid && !isNaN(fd.centroid[0])) ? fd.centroid[0] : 0;
+    const cy = (fd.centroid && !isNaN(fd.centroid[1])) ? fd.centroid[1] : 0;
+    if (fd.geoArea === 0 || fd.eligible === 0) {
+      return { scale: 0, cx, cy };
+    }
+    // targetArea / totalGeoArea = eligible / totalEligible
+    const targetArea = (fd.eligible / totalEligible) * totalGeoArea;
+    const scale = Math.sqrt(targetArea / fd.geoArea);
+    return { scale, cx, cy };
+  });
+}
+
+/**
+ * Render a single frame of the cartogram morph.
+ * morphT: 0 = geographic, 1 = fully scaled cartogram.
+ * Each feature is drawn coloured by winner, scaled around its centroid.
+ */
+export function renderCartogramFrame(ctx, features, projection, electionData, parties, year, cartogramScales, morphT, dpr) {
+  ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height);
+  const yearData = electionData[year];
+  if (!yearData) return;
+
+  const pathGen = d3.geoPath(projection, ctx);
+  ctx.save();
+  ctx.scale(dpr, dpr);
+
+  // Draw larger-scaled features first (behind), smaller on top
+  const indices = features.map((_, i) => i);
+  if (morphT > 0) {
+    indices.sort((a, b) => cartogramScales[b].scale - cartogramScales[a].scale);
+  }
+
+  for (const i of indices) {
+    const rd = yearData[i];
+    const cs = cartogramScales[i];
+    const s = 1 + (cs.scale - 1) * morphT;
+
+    // Winner colour
+    let fillColor = '#e0e0e0';
+    if (rd) {
+      let maxVotes = 0;
+      for (const party of parties) {
+        const count = rd.votes[party.id] || 0;
+        if (count > maxVotes) {
+          maxVotes = count;
+          fillColor = party.colour;
+        }
+      }
+    }
+
+    ctx.save();
+    ctx.translate(cs.cx, cs.cy);
+    ctx.scale(s, s);
+    ctx.translate(-cs.cx, -cs.cy);
+
+    ctx.fillStyle = fillColor;
+    ctx.beginPath();
+    pathGen(features[i]);
+    ctx.fill();
+
+    ctx.strokeStyle = 'rgba(0,0,0,0.2)';
+    ctx.lineWidth = 0.5 / s;
+    ctx.beginPath();
+    pathGen(features[i]);
+    ctx.stroke();
+
+    ctx.restore();
+  }
+
+  ctx.restore();
+}
+
 // ─── Dorling Cartogram ───────────────────────────────────────────
 
 export function computeDorling(baseSymbols) {

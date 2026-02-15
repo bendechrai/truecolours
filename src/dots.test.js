@@ -54,6 +54,7 @@ import {
   colourBubbles,
   generateDots,
   computeDorling,
+  computeCartogramScales,
 } from './dots.js';
 
 // ─── computeSymbols ─────────────────────────────────────────────
@@ -342,12 +343,61 @@ describe('computeDorling', () => {
   });
 });
 
+// ─── computeCartogramScales ──────────────────────────────────────
+
+describe('computeCartogramScales', () => {
+  it('returns scale 1 for all features when no election data', () => {
+    const features = makeFeatures(3);
+    const result = computeCartogramScales(features, mockProjection(), {}, [2020]);
+    expect(result).toHaveLength(3);
+    result.forEach(cs => expect(cs.scale).toBe(1));
+  });
+
+  it('returns one entry per feature', () => {
+    const features = makeFeatures(4);
+    const data = makeElectionData(features, [{ dem: 0.5, rep: 0.5 }]);
+    const result = computeCartogramScales(features, mockProjection(), data, [2020]);
+    expect(result).toHaveLength(4);
+    result.forEach(cs => {
+      expect(cs).toHaveProperty('scale');
+      expect(cs).toHaveProperty('cx');
+      expect(cs).toHaveProperty('cy');
+    });
+  });
+
+  it('gives larger scale to features with high eligible-to-area ratio', () => {
+    const features = makeFeatures(2);
+    // Both features have the same geographic area (1x1 unit square),
+    // but feature 1 has 10× the eligible voters
+    const data = {
+      2020: {
+        0: { votes: { dem: 500, rep: 500 }, eligible: 1000 },
+        1: { votes: { dem: 5000, rep: 5000 }, eligible: 10000 },
+      },
+    };
+    const result = computeCartogramScales(features, mockProjection(), data, [2020]);
+    expect(result[1].scale).toBeGreaterThan(result[0].scale);
+  });
+
+  it('gives scale 0 to features with zero eligible voters', () => {
+    const features = makeFeatures(2);
+    const data = {
+      2020: {
+        0: { votes: { dem: 500, rep: 500 }, eligible: 1000 },
+        1: { votes: {}, eligible: 0 },
+      },
+    };
+    const result = computeCartogramScales(features, mockProjection(), data, [2020]);
+    expect(result[1].scale).toBe(0);
+  });
+});
+
 // ─── VIZ_MODES config ───────────────────────────────────────────
 
 describe('VIZ_MODES config', () => {
   it('exports all expected modes', async () => {
     const { VIZ_MODES, DEFAULT_VIZ_MODE } = await import('./config.js');
-    expect(VIZ_MODES).toHaveLength(6);
+    expect(VIZ_MODES).toHaveLength(7);
     const ids = VIZ_MODES.map((m) => m.id);
     expect(ids).toContain('choropleth');
     expect(ids).toContain('dots');
@@ -355,6 +405,7 @@ describe('VIZ_MODES config', () => {
     expect(ids).toContain('bubbles');
     expect(ids).toContain('alpha');
     expect(ids).toContain('dorling');
+    expect(ids).toContain('cartogram');
     expect(ids).toContain(DEFAULT_VIZ_MODE);
   });
 

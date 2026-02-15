@@ -13,6 +13,7 @@ import {
   colourBubbles, renderBubbles,
   renderAlpha,
   computeDorling,
+  computeCartogramScales, renderCartogramFrame,
   renderBorders, buildHitTestCanvas,
 } from './dots.js';
 import {
@@ -32,6 +33,9 @@ const state = {
   vizMode: DEFAULT_VIZ_MODE,
   symbols: [],
   dorlingSymbols: [],
+  cartogramScales: null,
+  morphT: 0,
+  morphRafId: null,
   pieData: null,
   geoData: null,
   electionData: null,
@@ -155,6 +159,8 @@ async function switchCountry(id) {
     // Compute proportional symbols (step 3 of 4)
     state.symbols = computeSymbols(state.geoData.features, state.geoData.projection, width, height, state.electionData, config.elections);
     state.dorlingSymbols = computeDorling(state.symbols);
+    state.cartogramScales = computeCartogramScales(state.geoData.features, state.geoData.projection, state.electionData, config.elections);
+    state.morphT = state.vizMode === 'cartogram' ? 1 : 0;
     updateLoadingProgress('Rendering... 75%');
     await new Promise((r) => requestAnimationFrame(r));
 
@@ -249,13 +255,69 @@ function colourAndRender() {
       renderSymbols(dotCtx, state.dorlingSymbols, dorlingPieData, dpr);
       break;
     }
+
+    case 'cartogram':
+      renderCartogramFrame(dotCtx, state.geoData.features, state.geoData.projection,
+        state.electionData, config.parties, year, state.cartogramScales, state.morphT, dpr);
+      break;
   }
 }
 
 function setVizMode(modeId) {
+  const prevMode = state.vizMode;
   state.vizMode = modeId;
   setActiveVizButton(modeId);
-  colourAndRender();
+
+  // Cancel any running morph
+  cancelMorph();
+
+  const borderCtx = ui.borderCanvas.getContext('2d');
+
+  if (modeId === 'cartogram') {
+    // Hide static borders — the cartogram renderer draws its own per-feature borders
+    borderCtx.clearRect(0, 0, ui.borderCanvas.width, ui.borderCanvas.height);
+    animateMorph(0, 1, 800);
+  } else {
+    // Restore static borders if leaving cartogram
+    if (prevMode === 'cartogram') {
+      renderBorders(borderCtx, state.geoData, state.geoData.projection, dpr);
+    }
+    state.morphT = 0;
+    colourAndRender();
+  }
+}
+
+// ─── Morph animation ────────────────────────────────────────────
+
+function animateMorph(from, to, duration) {
+  cancelMorph();
+  const startTime = performance.now();
+  state.morphT = from;
+
+  function frame(now) {
+    const elapsed = now - startTime;
+    const progress = Math.min(elapsed / duration, 1);
+    state.morphT = from + (to - from) * easeInOutCubic(progress);
+    colourAndRender();
+    if (progress < 1) {
+      state.morphRafId = requestAnimationFrame(frame);
+    } else {
+      state.morphRafId = null;
+    }
+  }
+
+  state.morphRafId = requestAnimationFrame(frame);
+}
+
+function cancelMorph() {
+  if (state.morphRafId) {
+    cancelAnimationFrame(state.morphRafId);
+    state.morphRafId = null;
+  }
+}
+
+function easeInOutCubic(t) {
+  return t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
 }
 
 function setActiveVizButton(id) {
