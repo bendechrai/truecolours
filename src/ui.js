@@ -108,10 +108,13 @@ export function buildUI(container) {
     container.appendChild(embedSection);
 
     // Footer
+    const year = new Date().getFullYear();
     const footer = el('footer', { className: 'site-footer' }, [
       el('p', {}, ['True Colours \u2014 Making every vote visible.']),
       el('p', { className: 'contribute' }, [
-        'Open source on ',
+        '\u00a9 ' + year + ' ',
+        el('a', { href: 'https://bendechr.ai', target: '_blank', rel: 'noopener' }, ['Ben Dechrai']),
+        '. Open source on ',
         el('a', { href: 'https://github.com/bendechrai/truecolours', target: '_blank', rel: 'noopener' }, ['GitHub']),
         ' \u2014 issues and pull requests welcome.',
       ]),
