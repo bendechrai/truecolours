@@ -1,4 +1,5 @@
-// Proportional pie-chart symbols, border rendering, and hit-test ID canvas
+// Visualization renderers: proportional pies, dot density, choropleth,
+// party bubbles, value-by-alpha, Dorling cartogram, borders, hit-test
 
 import * as d3 from 'd3';
 
@@ -6,30 +7,40 @@ import * as d3 from 'd3';
 const SYMBOL_COVERAGE = 0.10;
 
 // No minimum radius — area is purely proportional to eligible voters.
-// Sub-pixel counties render as faint anti-aliased dots, which is correct:
-// a county with 500 voters out of 240M should be nearly invisible.
 const SYMBOL_MIN_RADIUS = 0;
 
 // Pies smaller than this (screen px) are drawn as a single blended dot
 const BLEND_RADIUS = 2;
 
+const TWO_PI = Math.PI * 2;
+
+// Dot density: target total dot count across all features
+const TARGET_DOT_COUNT = 100000;
+const DOT_RADIUS = 0.8;
+
+// ─── Seeded PRNG (mulberry32) ───────────────────────────────────
+
+function mulberry32(seed) {
+  return function () {
+    seed |= 0;
+    seed = (seed + 0x6d2b79f5) | 0;
+    let t = Math.imul(seed ^ (seed >>> 15), 1 | seed);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
 // ─── Compute symbols ─────────────────────────────────────────────
 
 /**
- * Place one proportional pie-chart symbol per feature.
- *
- * Each symbol is positioned at the projected centroid of its feature.
- * Radius is set so that circle AREA is proportional to eligible voters.
- * Dense urban areas get large pies; sparse rural areas get small dots.
- *
- * Returns: [{ featureIndex, x, y, radius }]  (screen-space coordinates)
+ * Place one proportional symbol per feature.
+ * Returns: [{ featureIndex, x, y, radius }]
  */
 export function computeSymbols(features, projection, width, height, electionData, elections) {
   if (!width || !height || !features.length) return [];
 
   const pathGen = d3.geoPath(projection);
 
-  // Find the latest year with election data
   let yearData = null;
   if (electionData && elections) {
     for (let yi = elections.length - 1; yi >= 0; yi--) {
@@ -38,7 +49,6 @@ export function computeSymbols(features, projection, width, height, electionData
     }
   }
 
-  // Gather per-feature eligible voter counts
   let totalEligible = 0;
   const eligibles = new Array(features.length);
   for (let i = 0; i < features.length; i++) {
@@ -49,11 +59,9 @@ export function computeSymbols(features, projection, width, height, electionData
 
   if (totalEligible === 0) return [];
 
-  // Area budget: the total circle area across all symbols
   const mapArea = width * height;
   const totalSymbolArea = mapArea * SYMBOL_COVERAGE;
 
-  // Build one symbol per feature
   const symbols = [];
   for (let i = 0; i < features.length; i++) {
     if (eligibles[i] === 0) continue;
@@ -70,19 +78,11 @@ export function computeSymbols(features, projection, width, height, electionData
   return symbols;
 }
 
-// ─── Colour symbols ──────────────────────────────────────────────
+// ─── Colour symbols (pie slices) ─────────────────────────────────
 
-/**
- * Compute pie-chart slices for each symbol for a given election year.
- *
- * Returns an array parallel to `symbols`.  Each element is:
- *   { slices: [{ startAngle, endAngle, r, g, b }] }
- */
 export function colourSymbols(symbols, electionData, features, parties, year, showNonVoters) {
   const yearData = electionData[year];
   if (!yearData) return symbols.map(() => ({ slices: [] }));
-
-  const TWO_PI = Math.PI * 2;
 
   return symbols.map((sym) => {
     const regionData = yearData[sym.featureIndex];
@@ -95,7 +95,7 @@ export function colourSymbols(symbols, electionData, features, parties, year, sh
     if (denominator === 0) return { slices: [] };
 
     const slices = [];
-    let angle = -Math.PI / 2; // start at 12 o'clock
+    let angle = -Math.PI / 2;
 
     for (const party of parties) {
       const count = votes[party.id] || 0;
@@ -116,19 +116,12 @@ export function colourSymbols(symbols, electionData, features, parties, year, sh
   });
 }
 
-// ─── Render ──────────────────────────────────────────────────────
+// ─── Render pie symbols ──────────────────────────────────────────
 
-/**
- * Render pie-chart symbols to a canvas.
- *
- * Draws smallest symbols first (behind), largest on top, so the most
- * populous areas dominate visually when pies overlap.
- */
 export function renderSymbols(ctx, symbols, pieData, dpr) {
   ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height);
   if (!symbols.length) return;
 
-  // Draw order: smallest first, largest on top
   const order = symbols.map((_, i) => i);
   order.sort((a, b) => symbols[a].radius - symbols[b].radius);
 
@@ -142,7 +135,6 @@ export function renderSymbols(ctx, symbols, pieData, dpr) {
     const r = sym.radius * dpr;
 
     if (sym.radius < BLEND_RADIUS) {
-      // Too small for visible pie segments — draw a single blended dot
       let tr = 0, tg = 0, tb = 0;
       for (const s of pd.slices) {
         const w = (s.endAngle - s.startAngle) / TWO_PI;
@@ -151,11 +143,10 @@ export function renderSymbols(ctx, symbols, pieData, dpr) {
         tb += w * s.b;
       }
       ctx.beginPath();
-      ctx.arc(cx, cy, r, 0, Math.PI * 2);
+      ctx.arc(cx, cy, r, 0, TWO_PI);
       ctx.fillStyle = `rgb(${Math.round(tr)},${Math.round(tg)},${Math.round(tb)})`;
       ctx.fill();
     } else {
-      // Draw pie wedges
       for (const s of pd.slices) {
         ctx.beginPath();
         ctx.moveTo(cx, cy);
@@ -164,9 +155,8 @@ export function renderSymbols(ctx, symbols, pieData, dpr) {
         ctx.fillStyle = `rgb(${s.r},${s.g},${s.b})`;
         ctx.fill();
       }
-      // Subtle outline for definition
       ctx.beginPath();
-      ctx.arc(cx, cy, r, 0, Math.PI * 2);
+      ctx.arc(cx, cy, r, 0, TWO_PI);
       ctx.strokeStyle = 'rgba(0,0,0,0.15)';
       ctx.lineWidth = 0.5 * dpr;
       ctx.stroke();
@@ -174,14 +164,312 @@ export function renderSymbols(ctx, symbols, pieData, dpr) {
   }
 }
 
-// Need TWO_PI at module scope for renderSymbols
-const TWO_PI = Math.PI * 2;
+// ─── Choropleth (classic misleading map) ─────────────────────────
+
+export function renderChoropleth(ctx, features, projection, electionData, parties, year, dpr) {
+  ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height);
+  const yearData = electionData[year];
+  if (!yearData) return;
+
+  const pathGen = d3.geoPath(projection, ctx);
+  ctx.save();
+  ctx.scale(dpr, dpr);
+
+  for (let i = 0; i < features.length; i++) {
+    const rd = yearData[i];
+    if (!rd) {
+      ctx.fillStyle = '#e0e0e0';
+      ctx.beginPath();
+      pathGen(features[i]);
+      ctx.fill();
+      continue;
+    }
+
+    let maxVotes = 0, winnerColour = '#e0e0e0';
+    for (const party of parties) {
+      const count = rd.votes[party.id] || 0;
+      if (count > maxVotes) {
+        maxVotes = count;
+        winnerColour = party.colour;
+      }
+    }
+
+    ctx.fillStyle = winnerColour;
+    ctx.beginPath();
+    pathGen(features[i]);
+    ctx.fill();
+  }
+
+  ctx.restore();
+}
+
+// ─── Dot Density ─────────────────────────────────────────────────
+
+export function generateDots(features, projection, electionData, parties, year, showNonVoters, hitTest) {
+  const yearData = electionData[year];
+  if (!yearData) return [];
+
+  const pathGen = d3.geoPath(projection);
+
+  // Total count determines voters per dot
+  let totalCount = 0;
+  for (let i = 0; i < features.length; i++) {
+    const rd = yearData[i];
+    if (!rd) continue;
+    const totalVotes = Object.values(rd.votes).reduce((a, b) => a + b, 0);
+    totalCount += showNonVoters ? rd.eligible : totalVotes;
+  }
+
+  if (totalCount === 0) return [];
+  const votersPerDot = Math.max(1, Math.round(totalCount / TARGET_DOT_COUNT));
+
+  const dots = [];
+
+  for (let i = 0; i < features.length; i++) {
+    const rd = yearData[i];
+    if (!rd) continue;
+
+    const bounds = pathGen.bounds(features[i]);
+    const [x0, y0] = bounds[0];
+    const [x1, y1] = bounds[1];
+    const bw = x1 - x0;
+    const bh = y1 - y0;
+    if (bw <= 0 || bh <= 0) continue;
+
+    // Seeded RNG per feature for deterministic placement
+    const rng = mulberry32(i * 31337 + year);
+
+    const groups = [];
+    for (const party of parties) {
+      const count = rd.votes[party.id] || 0;
+      if (count > 0) groups.push({ count, colour: party.colour });
+    }
+    if (showNonVoters) {
+      const totalVotes = Object.values(rd.votes).reduce((a, b) => a + b, 0);
+      const nv = rd.eligible - totalVotes;
+      if (nv > 0) groups.push({ count: nv, colour: '#CFCFCF' });
+    }
+
+    for (const { count, colour } of groups) {
+      const numDots = Math.round(count / votersPerDot);
+      if (numDots === 0) continue;
+      const rgb = hexToRgb(colour);
+      let placed = 0, attempts = 0;
+      const maxAttempts = numDots * 50;
+      while (placed < numDots && attempts < maxAttempts) {
+        const x = x0 + rng() * bw;
+        const y = y0 + rng() * bh;
+        if (hitTest.getFeatureIndex(x, y) === i) {
+          dots.push({ x, y, r: rgb[0], g: rgb[1], b: rgb[2] });
+          placed++;
+        }
+        attempts++;
+      }
+    }
+  }
+
+  // Shuffle so no party is always on top
+  const shuffleRng = mulberry32(year * 7919);
+  for (let i = dots.length - 1; i > 0; i--) {
+    const j = Math.floor(shuffleRng() * (i + 1));
+    [dots[i], dots[j]] = [dots[j], dots[i]];
+  }
+
+  return dots;
+}
+
+export function renderDots(ctx, dots, dpr) {
+  ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height);
+  if (!dots.length) return;
+
+  const r = DOT_RADIUS * dpr;
+
+  // Batch by colour for efficient canvas rendering
+  const byColor = new Map();
+  for (const dot of dots) {
+    const key = (dot.r << 16) | (dot.g << 8) | dot.b;
+    if (!byColor.has(key)) {
+      byColor.set(key, { r: dot.r, g: dot.g, b: dot.b, pts: [] });
+    }
+    byColor.get(key).pts.push(dot);
+  }
+
+  for (const [, group] of byColor) {
+    ctx.fillStyle = `rgb(${group.r},${group.g},${group.b})`;
+    ctx.beginPath();
+    for (const dot of group.pts) {
+      const cx = dot.x * dpr;
+      const cy = dot.y * dpr;
+      ctx.moveTo(cx + r, cy);
+      ctx.arc(cx, cy, r, 0, TWO_PI);
+    }
+    ctx.fill();
+  }
+}
+
+// ─── Party Bubbles (concentric circles) ──────────────────────────
+
+export function colourBubbles(symbols, electionData, features, parties, year, showNonVoters) {
+  const yearData = electionData[year];
+  if (!yearData) return symbols.map(() => ({ circles: [] }));
+
+  return symbols.map((sym) => {
+    const regionData = yearData[sym.featureIndex];
+    if (!regionData) return { circles: [] };
+
+    const { votes, eligible } = regionData;
+    const totalVotes = Object.values(votes).reduce((a, b) => a + b, 0);
+    const denominator = showNonVoters ? eligible : totalVotes;
+    if (denominator === 0) return { circles: [] };
+
+    const circles = [];
+    for (const party of parties) {
+      const count = votes[party.id] || 0;
+      if (count <= 0) continue;
+      const rgb = hexToRgb(party.colour);
+      const radius = sym.radius * Math.sqrt(count / denominator);
+      circles.push({ radius, r: rgb[0], g: rgb[1], b: rgb[2] });
+    }
+
+    if (showNonVoters) {
+      const nonVoters = eligible - totalVotes;
+      if (nonVoters > 0) {
+        const rgb = hexToRgb('#CFCFCF');
+        const radius = sym.radius * Math.sqrt(nonVoters / denominator);
+        circles.push({ radius, r: rgb[0], g: rgb[1], b: rgb[2] });
+      }
+    }
+
+    // Largest drawn first (behind), smallest on top
+    circles.sort((a, b) => b.radius - a.radius);
+    return { circles };
+  });
+}
+
+export function renderBubbles(ctx, symbols, bubbleData, dpr) {
+  ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height);
+  if (!symbols.length) return;
+
+  const order = symbols.map((_, i) => i);
+  order.sort((a, b) => symbols[a].radius - symbols[b].radius);
+
+  for (const idx of order) {
+    const sym = symbols[idx];
+    const bd = bubbleData[idx];
+    if (!bd?.circles.length) continue;
+
+    const cx = sym.x * dpr;
+    const cy = sym.y * dpr;
+
+    if (sym.radius < BLEND_RADIUS) {
+      let tr = 0, tg = 0, tb = 0, totalArea = 0;
+      for (const c of bd.circles) {
+        const a = c.radius * c.radius;
+        tr += a * c.r; tg += a * c.g; tb += a * c.b;
+        totalArea += a;
+      }
+      if (totalArea > 0) { tr /= totalArea; tg /= totalArea; tb /= totalArea; }
+      ctx.beginPath();
+      ctx.arc(cx, cy, sym.radius * dpr, 0, TWO_PI);
+      ctx.fillStyle = `rgb(${Math.round(tr)},${Math.round(tg)},${Math.round(tb)})`;
+      ctx.fill();
+    } else {
+      for (const c of bd.circles) {
+        ctx.beginPath();
+        ctx.arc(cx, cy, c.radius * dpr, 0, TWO_PI);
+        ctx.fillStyle = `rgb(${c.r},${c.g},${c.b})`;
+        ctx.fill();
+      }
+      ctx.beginPath();
+      ctx.arc(cx, cy, bd.circles[0].radius * dpr, 0, TWO_PI);
+      ctx.strokeStyle = 'rgba(0,0,0,0.15)';
+      ctx.lineWidth = 0.5 * dpr;
+      ctx.stroke();
+    }
+  }
+}
+
+// ─── Value-by-Alpha (shaded choropleth) ──────────────────────────
+
+export function renderAlpha(ctx, features, projection, electionData, parties, year, showNonVoters, dpr) {
+  ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height);
+  const yearData = electionData[year];
+  if (!yearData) return;
+
+  const pathGenNoCtx = d3.geoPath(projection);
+  const pathGen = d3.geoPath(projection, ctx);
+
+  // Compute projected-pixel density for each feature
+  const densities = [];
+  let maxDensity = 0;
+  for (let i = 0; i < features.length; i++) {
+    const rd = yearData[i];
+    const area = pathGenNoCtx.area(features[i]);
+    const eligible = rd?.eligible || 0;
+    const density = area > 0 ? eligible / area : 0;
+    densities.push(density);
+    if (density > maxDensity) maxDensity = density;
+  }
+
+  ctx.save();
+  ctx.scale(dpr, dpr);
+
+  for (let i = 0; i < features.length; i++) {
+    const rd = yearData[i];
+    if (!rd) {
+      ctx.fillStyle = 'rgba(200,200,200,0.05)';
+      ctx.beginPath();
+      pathGen(features[i]);
+      ctx.fill();
+      continue;
+    }
+
+    // Find winner
+    let maxVotes = 0, winnerRgb = [200, 200, 200];
+    for (const party of parties) {
+      const count = rd.votes[party.id] || 0;
+      if (count > maxVotes) {
+        maxVotes = count;
+        winnerRgb = hexToRgb(party.colour);
+      }
+    }
+
+    // Alpha from density (log scale to avoid extreme values crushing)
+    const alpha = maxDensity > 0
+      ? Math.min(1, 0.05 + 0.95 * Math.log(1 + densities[i]) / Math.log(1 + maxDensity))
+      : 0.05;
+
+    ctx.fillStyle = `rgba(${winnerRgb[0]},${winnerRgb[1]},${winnerRgb[2]},${alpha.toFixed(3)})`;
+    ctx.beginPath();
+    pathGen(features[i]);
+    ctx.fill();
+  }
+
+  ctx.restore();
+}
+
+// ─── Dorling Cartogram ───────────────────────────────────────────
+
+export function computeDorling(baseSymbols) {
+  const nodes = baseSymbols
+    .filter(s => s.radius > 0.3)
+    .map(s => ({ ...s }));
+
+  if (!nodes.length) return nodes;
+
+  const sim = d3.forceSimulation(nodes)
+    .force('x', d3.forceX(d => d.x).strength(0.05))
+    .force('y', d3.forceY(d => d.y).strength(0.05))
+    .force('collide', d3.forceCollide(d => d.radius + 0.5).iterations(4))
+    .stop();
+
+  for (let i = 0; i < 300; i++) sim.tick();
+
+  return nodes;
+}
 
 // ─── Borders ─────────────────────────────────────────────────────
 
-/**
- * Render region borders and country outline.
- */
 export function renderBorders(ctx, geoData, projection, dpr) {
   const pathGen = d3.geoPath(projection, ctx);
 
@@ -189,7 +477,6 @@ export function renderBorders(ctx, geoData, projection, dpr) {
   ctx.save();
   ctx.scale(dpr, dpr);
 
-  // US-style pre-computed mesh borders (state lines)
   if (geoData.stateBorders) {
     ctx.strokeStyle = 'rgba(0,0,0,0.35)';
     ctx.lineWidth = 1.0;
@@ -198,7 +485,6 @@ export function renderBorders(ctx, geoData, projection, dpr) {
     ctx.stroke();
   }
 
-  // GeoJSON countries: draw individual region borders
   if (geoData.regionBorders && geoData.features) {
     ctx.strokeStyle = 'rgba(0,0,0,0.1)';
     ctx.lineWidth = 0.3;
@@ -209,7 +495,6 @@ export function renderBorders(ctx, geoData, projection, dpr) {
     }
   }
 
-  // Country outline (darker, thicker)
   if (geoData.outline) {
     ctx.strokeStyle = 'rgba(0,0,0,0.35)';
     ctx.lineWidth = 1.2;
@@ -223,11 +508,6 @@ export function renderBorders(ctx, geoData, projection, dpr) {
 
 // ─── Hit-test canvas ─────────────────────────────────────────────
 
-/**
- * Build an offscreen ID canvas for fast hit-testing.
- * Each feature is rendered with a unique colour encoding its index.
- * Returns: { canvas, getFeatureIndex(x, y) }
- */
 export function buildHitTestCanvas(features, projection, width, height, dpr) {
   const canvas = new OffscreenCanvas(width * dpr, height * dpr);
   const ctx = canvas.getContext('2d', { willReadFrequently: true });
@@ -236,7 +516,6 @@ export function buildHitTestCanvas(features, projection, width, height, dpr) {
   const pathGen = d3.geoPath(projection, ctx);
 
   for (let i = 0; i < features.length; i++) {
-    // Encode feature index as RGB (supports up to 16M features)
     const r = (i + 1) & 0xff;
     const g = ((i + 1) >> 8) & 0xff;
     const b = ((i + 1) >> 16) & 0xff;

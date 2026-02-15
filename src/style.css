@@ -203,6 +203,40 @@ body {
   flex-shrink: 0;
 }
 
+/* Visualization mode selector */
+.viz-bar {
+  display: flex;
+  justify-content: center;
+  gap: 0.35rem;
+  padding: 0.75rem 0 0;
+  flex-wrap: wrap;
+}
+
+.viz-btn {
+  font-family: var(--font-body);
+  font-size: 0.78rem;
+  font-weight: 500;
+  padding: 0.3rem 0.8rem;
+  border: 1px solid var(--card-border);
+  border-radius: 999px;
+  background: var(--card-bg);
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+  white-space: nowrap;
+}
+
+.viz-btn:hover {
+  background: #f0ede8;
+  color: var(--text);
+}
+
+.viz-btn.active {
+  background: var(--text);
+  color: #fff;
+  border-color: var(--text);
+}
+
 /* Timeline */
 .timeline {
   text-align: center;
@@ -572,6 +606,11 @@ body {
     font-size: 0.85rem;
   }
 
+  .viz-btn {
+    font-size: 0.72rem;
+    padding: 0.25rem 0.6rem;
+  }
+
   .tooltip {
     max-width: 220px;
     font-size: 0.78rem;
@@ -591,6 +630,15 @@ body {
   .country-btn {
     font-size: 0.75rem;
     padding: 0.35rem 0.6rem;
+  }
+
+  .viz-bar {
+    gap: 0.25rem;
+  }
+
+  .viz-btn {
+    font-size: 0.68rem;
+    padding: 0.2rem 0.5rem;
   }
 
   .legend {

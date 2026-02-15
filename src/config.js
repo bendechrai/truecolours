@@ -99,3 +99,13 @@ export const MOBILE_BREAKPOINT = 768;
 export const AUTOPLAY_INTERVAL = 2500;
 export const RESIZE_DEBOUNCE = 300;
 export const TEST_CANVAS_SIZE = 150;
+
+export const VIZ_MODES = [
+  { id: 'choropleth', name: 'Classic' },
+  { id: 'dots', name: 'Dot Density' },
+  { id: 'pies', name: 'Pie Charts' },
+  { id: 'bubbles', name: 'Party Circles' },
+  { id: 'alpha', name: 'Shaded' },
+  { id: 'dorling', name: 'Dorling' },
+];
+export const DEFAULT_VIZ_MODE = 'dots';

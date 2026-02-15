@@ -1,6 +1,6 @@
 // DOM generation, legend, tooltips, year display, timeline controls
 
-import { COUNTRIES, AUTOPLAY_INTERVAL } from './config.js';
+import { COUNTRIES, AUTOPLAY_INTERVAL, VIZ_MODES } from './config.js';
 
 /**
  * Build the entire page DOM structure.
@@ -59,6 +59,16 @@ export function buildUI(container) {
   // Legend
   const legend = el('div', { className: 'legend' });
   mapCard.appendChild(legend);
+
+  // Visualization mode selector
+  const vizBar = el('div', { className: 'viz-bar' });
+  const vizButtons = {};
+  for (const mode of VIZ_MODES) {
+    const btn = el('button', { className: 'viz-btn', 'data-mode': mode.id }, [mode.name]);
+    vizButtons[mode.id] = btn;
+    vizBar.appendChild(btn);
+  }
+  mapCard.appendChild(vizBar);
 
   // Timeline
   const timeline = el('div', { className: 'timeline' });
@@ -125,6 +135,8 @@ export function buildUI(container) {
   return {
     countryBar,
     countryButtons,
+    vizBar,
+    vizButtons,
     banner,
     mapCard,
     mapContainer,

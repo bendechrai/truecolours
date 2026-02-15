@@ -3,10 +3,18 @@
 
 import './style.css';
 import * as d3 from 'd3';
-import { COUNTRIES, DEFAULT_COUNTRY, RESIZE_DEBOUNCE } from './config.js';
+import { COUNTRIES, DEFAULT_COUNTRY, DEFAULT_VIZ_MODE, RESIZE_DEBOUNCE } from './config.js';
 import { loadUS, loadGeoJSONCountry } from './geoLoader.js';
 import { loadElectionData } from './electionData.js';
-import { computeSymbols, colourSymbols, renderSymbols, renderBorders, buildHitTestCanvas } from './dots.js';
+import {
+  computeSymbols, colourSymbols, renderSymbols,
+  renderChoropleth,
+  generateDots, renderDots,
+  colourBubbles, renderBubbles,
+  renderAlpha,
+  computeDorling,
+  renderBorders, buildHitTestCanvas,
+} from './dots.js';
 import {
   buildUI,
   updateLegend,
@@ -21,7 +29,9 @@ const state = {
   country: DEFAULT_COUNTRY,
   yearIndex: 0,
   showNonVoters: false,
+  vizMode: DEFAULT_VIZ_MODE,
   symbols: [],
+  dorlingSymbols: [],
   pieData: null,
   geoData: null,
   electionData: null,
@@ -45,6 +55,12 @@ function init() {
   for (const [id, btn] of Object.entries(ui.countryButtons)) {
     btn.addEventListener('click', () => switchCountry(id));
   }
+
+  // Wire viz mode buttons
+  for (const [id, btn] of Object.entries(ui.vizButtons)) {
+    btn.addEventListener('click', () => setVizMode(id));
+  }
+  setActiveVizButton(state.vizMode);
 
   // Wire timeline controls
   ui.prevBtn.addEventListener('click', () => stepYear(-1));
@@ -136,8 +152,9 @@ async function switchCountry(id) {
     updateLoadingProgress('Placing dots... 50%');
     await new Promise((r) => requestAnimationFrame(r));
 
-    // Compute pie-chart symbols (step 3 of 4)
+    // Compute proportional symbols (step 3 of 4)
     state.symbols = computeSymbols(state.geoData.features, state.geoData.projection, width, height, state.electionData, config.elections);
+    state.dorlingSymbols = computeDorling(state.symbols);
     updateLoadingProgress('Rendering... 75%');
     await new Promise((r) => requestAnimationFrame(r));
 
@@ -190,18 +207,61 @@ function goToYearIndex(idx) {
 function colourAndRender() {
   const config = COUNTRIES[state.country];
   const year = config.elections[state.yearIndex];
-
-  state.pieData = colourSymbols(
-    state.symbols,
-    state.electionData,
-    state.geoData.features,
-    config.parties,
-    year,
-    state.showNonVoters,
-  );
-
   const dotCtx = ui.dotCanvas.getContext('2d');
-  renderSymbols(dotCtx, state.symbols, state.pieData, dpr);
+
+  switch (state.vizMode) {
+    case 'choropleth':
+      renderChoropleth(dotCtx, state.geoData.features, state.geoData.projection,
+        state.electionData, config.parties, year, dpr);
+      break;
+
+    case 'dots': {
+      const dots = generateDots(
+        state.geoData.features, state.geoData.projection,
+        state.electionData, config.parties, year,
+        state.showNonVoters, state.hitTest,
+      );
+      renderDots(dotCtx, dots, dpr);
+      break;
+    }
+
+    case 'pies':
+      state.pieData = colourSymbols(state.symbols, state.electionData,
+        state.geoData.features, config.parties, year, state.showNonVoters);
+      renderSymbols(dotCtx, state.symbols, state.pieData, dpr);
+      break;
+
+    case 'bubbles': {
+      const bubbleData = colourBubbles(state.symbols, state.electionData,
+        state.geoData.features, config.parties, year, state.showNonVoters);
+      renderBubbles(dotCtx, state.symbols, bubbleData, dpr);
+      break;
+    }
+
+    case 'alpha':
+      renderAlpha(dotCtx, state.geoData.features, state.geoData.projection,
+        state.electionData, config.parties, year, state.showNonVoters, dpr);
+      break;
+
+    case 'dorling': {
+      const dorlingPieData = colourSymbols(state.dorlingSymbols, state.electionData,
+        state.geoData.features, config.parties, year, state.showNonVoters);
+      renderSymbols(dotCtx, state.dorlingSymbols, dorlingPieData, dpr);
+      break;
+    }
+  }
+}
+
+function setVizMode(modeId) {
+  state.vizMode = modeId;
+  setActiveVizButton(modeId);
+  colourAndRender();
+}
+
+function setActiveVizButton(id) {
+  for (const [mid, btn] of Object.entries(ui.vizButtons)) {
+    btn.classList.toggle('active', mid === id);
+  }
 }
 
 // ─── Canvas setup ──────────────────────────────────────────────────
