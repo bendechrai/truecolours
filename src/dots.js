@@ -355,26 +355,39 @@ export function colourBubbles(symbols, electionData, features, parties, year, sh
     const denominator = showNonVoters ? eligible : totalVotes;
     if (denominator === 0) return { circles: [] };
 
-    const circles = [];
+    const entries = [];
     for (const party of parties) {
       const count = votes[party.id] || 0;
       if (count <= 0) continue;
       const rgb = hexToRgb(party.colour);
-      const radius = sym.radius * Math.sqrt(count / denominator);
-      circles.push({ radius, r: rgb[0], g: rgb[1], b: rgb[2] });
+      entries.push({ count, r: rgb[0], g: rgb[1], b: rgb[2] });
     }
 
     if (showNonVoters) {
       const nonVoters = eligible - totalVotes;
       if (nonVoters > 0) {
         const rgb = hexToRgb('#CFCFCF');
-        const radius = sym.radius * Math.sqrt(nonVoters / denominator);
-        circles.push({ radius, r: rgb[0], g: rgb[1], b: rgb[2] });
+        entries.push({ count: nonVoters, r: rgb[0], g: rgb[1], b: rgb[2] });
       }
     }
 
+    // Sort ascending by count — smallest drawn on top, largest behind.
+    // Build cumulative radii so each visible ring area ∝ that party's votes.
+    entries.sort((a, b) => a.count - b.count);
+
+    const circles = [];
+    let cumCount = 0;
+    for (const e of entries) {
+      cumCount += e.count;
+      circles.push({
+        radius: sym.radius * Math.sqrt(cumCount / denominator),
+        weight: e.count,
+        r: e.r, g: e.g, b: e.b,
+      });
+    }
+
     // Largest drawn first (behind), smallest on top
-    circles.sort((a, b) => b.radius - a.radius);
+    circles.reverse();
     return { circles };
   });
 }
@@ -395,13 +408,13 @@ export function renderBubbles(ctx, symbols, bubbleData, dpr, positions = null) {
     const cy = (positions ? positions[idx].y : sym.y) * dpr;
 
     if (sym.radius < BLEND_RADIUS) {
-      let tr = 0, tg = 0, tb = 0, totalArea = 0;
+      let tr = 0, tg = 0, tb = 0, tw = 0;
       for (const c of bd.circles) {
-        const a = c.radius * c.radius;
-        tr += a * c.r; tg += a * c.g; tb += a * c.b;
-        totalArea += a;
+        const w = c.weight || c.radius * c.radius;
+        tr += w * c.r; tg += w * c.g; tb += w * c.b;
+        tw += w;
       }
-      if (totalArea > 0) { tr /= totalArea; tg /= totalArea; tb /= totalArea; }
+      if (tw > 0) { tr /= tw; tg /= tw; tb /= tw; }
       ctx.beginPath();
       ctx.arc(cx, cy, sym.radius * dpr, 0, TWO_PI);
       ctx.fillStyle = `rgb(${Math.round(tr)},${Math.round(tg)},${Math.round(tb)})`;

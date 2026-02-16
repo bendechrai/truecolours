@@ -189,31 +189,34 @@ describe('colourBubbles', () => {
     expect(result[0].circles[0].radius).toBeGreaterThan(result[0].circles[1].radius);
   });
 
-  it('circle areas sum to the symbol area', () => {
+  it('outermost circle area equals the symbol area', () => {
     const R = 20;
     const symbols = [{ featureIndex: 0, x: 0, y: 0, radius: R }];
     const data = {
       2020: { 0: { votes: { dem: 600, rep: 400 }, eligible: 1000 } },
     };
     const result = colourBubbles(symbols, data, [], parties, 2020, false);
-    const totalCircleArea = result[0].circles.reduce(
-      (sum, c) => sum + Math.PI * c.radius * c.radius,
-      0,
-    );
-    expect(totalCircleArea).toBeCloseTo(Math.PI * R * R, 1);
+    // Outermost (first) circle encompasses all votes → area = πR²
+    const outerArea = Math.PI * result[0].circles[0].radius * result[0].circles[0].radius;
+    expect(outerArea).toBeCloseTo(Math.PI * R * R, 1);
   });
 
-  it('each circle radius is proportional to sqrt(votes/total)', () => {
+  it('visible ring areas are proportional to votes', () => {
     const R = 20;
     const symbols = [{ featureIndex: 0, x: 0, y: 0, radius: R }];
     const data = {
       2020: { 0: { votes: { dem: 600, rep: 400 }, eligible: 1000 } },
     };
     const result = colourBubbles(symbols, data, [], parties, 2020, false);
-    const demCircle = result[0].circles.find((c) => c.r === 0x13); // #1375B7 → r=0x13=19
-    const repCircle = result[0].circles.find((c) => c.r === 0xe8); // #E81B23 → r=0xe8=232
-    expect(demCircle.radius).toBeCloseTo(R * Math.sqrt(600 / 1000), 5);
-    expect(repCircle.radius).toBeCloseTo(R * Math.sqrt(400 / 1000), 5);
+    const circles = result[0].circles; // [largest (outer), smallest (inner)]
+    // Dem has more votes → its circle is the outer one
+    const demCircle = circles.find((c) => c.r === 0x13);
+    const repCircle = circles.find((c) => c.r === 0xe8);
+    // Visible ring area of outer (dem) = πR_dem² - πR_rep²
+    const demVisibleArea = Math.PI * (demCircle.radius ** 2 - repCircle.radius ** 2);
+    const repVisibleArea = Math.PI * repCircle.radius ** 2;
+    // Ratio of visible areas should match vote ratio (600:400 = 1.5)
+    expect(demVisibleArea / repVisibleArea).toBeCloseTo(600 / 400, 2);
   });
 });
 
