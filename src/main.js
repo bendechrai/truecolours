@@ -13,7 +13,7 @@ import {
   colourBubbles, renderBubbles,
   renderAlpha,
   computeDorling,
-  computeCartogramScales, renderCartogramFrame,
+  computeCartogramScales, renderCartogramOutlines,
   renderBorders, buildHitTestCanvas,
 } from './dots.js';
 import {
@@ -31,11 +31,14 @@ const state = {
   yearIndex: 0,
   showNonVoters: false,
   vizMode: DEFAULT_VIZ_MODE,
+  cartogramShape: false,
   symbols: [],
   dorlingSymbols: [],
   cartogramScales: null,
   morphT: 0,
   morphRafId: null,
+  cachedDots: null,
+  cachedDotsKey: null,
   pieData: null,
   geoData: null,
   electionData: null,
@@ -65,6 +68,9 @@ function init() {
     btn.addEventListener('click', () => setVizMode(id));
   }
   setActiveVizButton(state.vizMode);
+
+  // Wire cartogram shape toggle
+  ui.cartogramToggle.addEventListener('click', () => toggleCartogramShape());
 
   // Wire timeline controls
   ui.prevBtn.addEventListener('click', () => stepYear(-1));
@@ -160,7 +166,9 @@ async function switchCountry(id) {
     state.symbols = computeSymbols(state.geoData.features, state.geoData.projection, width, height, state.electionData, config.elections);
     state.dorlingSymbols = computeDorling(state.symbols);
     state.cartogramScales = computeCartogramScales(state.geoData.features, state.geoData.projection, state.electionData, config.elections);
-    state.morphT = state.vizMode === 'cartogram' ? 1 : 0;
+    state.morphT = state.cartogramShape ? 1 : 0;
+    state.cachedDots = null;
+    state.cachedDotsKey = null;
     updateLoadingProgress('Rendering... 75%');
     await new Promise((r) => requestAnimationFrame(r));
 
@@ -176,9 +184,11 @@ async function switchCountry(id) {
     // Colour and render (step 4 of 4)
     colourAndRender();
 
-    // Render borders
-    const borderCtx = ui.borderCanvas.getContext('2d');
-    renderBorders(borderCtx, state.geoData, state.geoData.projection, dpr);
+    // Render borders (cartogram mode renders its own on the border canvas)
+    if (!state.cartogramShape) {
+      const borderCtx = ui.borderCanvas.getContext('2d');
+      renderBorders(borderCtx, state.geoData, state.geoData.projection, dpr);
+    }
 
     // Update UI
     updateLegendUI();
@@ -215,19 +225,35 @@ function colourAndRender() {
   const year = config.elections[state.yearIndex];
   const dotCtx = ui.dotCanvas.getContext('2d');
 
+  // Cartogram params — pass to renderers when morphing
+  const cs = state.morphT > 0 ? state.cartogramScales : null;
+  const mt = state.morphT;
+
+  // Update border canvas during cartogram morph for non-path viz modes
+  if (mt > 0 && state.vizMode !== 'choropleth' && state.vizMode !== 'alpha') {
+    const borderCtx = ui.borderCanvas.getContext('2d');
+    renderCartogramOutlines(borderCtx, state.geoData.features, state.geoData.projection,
+      state.cartogramScales, mt, dpr);
+  }
+
   switch (state.vizMode) {
     case 'choropleth':
       renderChoropleth(dotCtx, state.geoData.features, state.geoData.projection,
-        state.electionData, config.parties, year, dpr);
+        state.electionData, config.parties, year, dpr, cs, mt);
       break;
 
     case 'dots': {
-      const dots = generateDots(
-        state.geoData.features, state.geoData.projection,
-        state.electionData, config.parties, year,
-        state.showNonVoters,
-      );
-      renderDots(dotCtx, dots, dpr);
+      // Cache dots for smooth morph animation (avoid regenerating ~100k dots per frame)
+      const dotsKey = `${year}-${state.showNonVoters}`;
+      if (state.cachedDotsKey !== dotsKey) {
+        state.cachedDots = generateDots(
+          state.geoData.features, state.geoData.projection,
+          state.electionData, config.parties, year,
+          state.showNonVoters,
+        );
+        state.cachedDotsKey = dotsKey;
+      }
+      renderDots(dotCtx, state.cachedDots, dpr, cs, mt);
       break;
     }
 
@@ -246,7 +272,7 @@ function colourAndRender() {
 
     case 'alpha':
       renderAlpha(dotCtx, state.geoData.features, state.geoData.projection,
-        state.electionData, config.parties, year, state.showNonVoters, dpr);
+        state.electionData, config.parties, year, state.showNonVoters, dpr, cs, mt);
       break;
 
     case 'dorling': {
@@ -255,41 +281,60 @@ function colourAndRender() {
       renderSymbols(dotCtx, state.dorlingSymbols, dorlingPieData, dpr);
       break;
     }
-
-    case 'cartogram':
-      renderCartogramFrame(dotCtx, state.geoData.features, state.geoData.projection,
-        state.electionData, config.parties, year, state.cartogramScales, state.morphT, dpr);
-      break;
   }
 }
 
 function setVizMode(modeId) {
-  const prevMode = state.vizMode;
   state.vizMode = modeId;
   setActiveVizButton(modeId);
 
-  // Cancel any running morph
+  // Dorling has its own shape — disable cartogram toggle and force geographic
+  if (modeId === 'dorling') {
+    ui.cartogramToggle.classList.add('disabled');
+    if (state.cartogramShape) {
+      state.cartogramShape = false;
+      ui.cartogramToggle.classList.remove('active');
+      cancelMorph();
+      state.morphT = 0;
+      const borderCtx = ui.borderCanvas.getContext('2d');
+      renderBorders(borderCtx, state.geoData, state.geoData.projection, dpr);
+    }
+  } else {
+    ui.cartogramToggle.classList.remove('disabled');
+  }
+
+  // Clear dot cache when switching modes
+  state.cachedDots = null;
+  state.cachedDotsKey = null;
+
+  colourAndRender();
+}
+
+// ─── Cartogram toggle ───────────────────────────────────────────
+
+function toggleCartogramShape() {
+  if (state.vizMode === 'dorling') return;
+
+  state.cartogramShape = !state.cartogramShape;
+  ui.cartogramToggle.classList.toggle('active', state.cartogramShape);
+
   cancelMorph();
 
   const borderCtx = ui.borderCanvas.getContext('2d');
 
-  if (modeId === 'cartogram') {
-    // Hide static borders — the cartogram renderer draws its own per-feature borders
+  if (state.cartogramShape) {
     borderCtx.clearRect(0, 0, ui.borderCanvas.width, ui.borderCanvas.height);
     animateMorph(0, 1, 800);
   } else {
-    // Restore static borders if leaving cartogram
-    if (prevMode === 'cartogram') {
+    animateMorph(1, 0, 800, () => {
       renderBorders(borderCtx, state.geoData, state.geoData.projection, dpr);
-    }
-    state.morphT = 0;
-    colourAndRender();
+    });
   }
 }
 
 // ─── Morph animation ────────────────────────────────────────────
 
-function animateMorph(from, to, duration) {
+function animateMorph(from, to, duration, onComplete) {
   cancelMorph();
   const startTime = performance.now();
   state.morphT = from;
@@ -303,6 +348,7 @@ function animateMorph(from, to, duration) {
       state.morphRafId = requestAnimationFrame(frame);
     } else {
       state.morphRafId = null;
+      if (onComplete) onComplete();
     }
   }
 

@@ -107,6 +107,5 @@ export const VIZ_MODES = [
   { id: 'bubbles', name: 'Party Circles' },
   { id: 'alpha', name: 'Shaded' },
   { id: 'dorling', name: 'Dorling' },
-  { id: 'cartogram', name: 'Cartogram' },
 ];
 export const DEFAULT_VIZ_MODE = 'dots';

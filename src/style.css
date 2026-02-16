@@ -237,6 +237,38 @@ body {
   border-color: var(--text);
 }
 
+/* Cartogram shape toggle */
+.cartogram-toggle {
+  display: block;
+  margin: 0.5rem auto 0;
+  font-family: var(--font-body);
+  font-size: 0.78rem;
+  font-weight: 500;
+  padding: 0.3rem 0.9rem;
+  border: 1px solid var(--card-border);
+  border-radius: 999px;
+  background: var(--card-bg);
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+}
+
+.cartogram-toggle:hover {
+  background: #f0ede8;
+  color: var(--text);
+}
+
+.cartogram-toggle.active {
+  background: var(--text);
+  color: #fff;
+  border-color: var(--text);
+}
+
+.cartogram-toggle.disabled {
+  opacity: 0.4;
+  pointer-events: none;
+}
+
 /* Timeline */
 .timeline {
   text-align: center;

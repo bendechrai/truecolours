@@ -279,6 +279,22 @@ describe('generateDots', () => {
     expect(dotsWith.length).toBeGreaterThan(dotsWithout.length);
   });
 
+  it('each dot has a feature index (fi) for cartogram transforms', () => {
+    const features = makeFeatures(2);
+    const data = {
+      2020: {
+        0: { votes: { dem: 10000, rep: 5000 }, eligible: 15000 },
+        1: { votes: { dem: 5000, rep: 10000 }, eligible: 15000 },
+      },
+    };
+    const dots = generateDots(features, mockProjection(), data, parties, 2020, false);
+    for (const dot of dots) {
+      expect(dot).toHaveProperty('fi');
+      expect(dot.fi).toBeGreaterThanOrEqual(0);
+      expect(dot.fi).toBeLessThan(features.length);
+    }
+  });
+
   it('dots are shuffled across parties', () => {
     const features = makeFeatures(1);
     const data = {
@@ -397,7 +413,7 @@ describe('computeCartogramScales', () => {
 describe('VIZ_MODES config', () => {
   it('exports all expected modes', async () => {
     const { VIZ_MODES, DEFAULT_VIZ_MODE } = await import('./config.js');
-    expect(VIZ_MODES).toHaveLength(7);
+    expect(VIZ_MODES).toHaveLength(6);
     const ids = VIZ_MODES.map((m) => m.id);
     expect(ids).toContain('choropleth');
     expect(ids).toContain('dots');
@@ -405,7 +421,6 @@ describe('VIZ_MODES config', () => {
     expect(ids).toContain('bubbles');
     expect(ids).toContain('alpha');
     expect(ids).toContain('dorling');
-    expect(ids).toContain('cartogram');
     expect(ids).toContain(DEFAULT_VIZ_MODE);
   });
 

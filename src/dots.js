@@ -166,38 +166,61 @@ export function renderSymbols(ctx, symbols, pieData, dpr) {
 
 // ─── Choropleth (classic misleading map) ─────────────────────────
 
-export function renderChoropleth(ctx, features, projection, electionData, parties, year, dpr) {
+export function renderChoropleth(ctx, features, projection, electionData, parties, year, dpr,
+  cartogramScales = null, morphT = 0) {
   ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height);
   const yearData = electionData[year];
   if (!yearData) return;
 
+  const useCartogram = cartogramScales && morphT > 0;
   const pathGen = d3.geoPath(projection, ctx);
   ctx.save();
   ctx.scale(dpr, dpr);
 
-  for (let i = 0; i < features.length; i++) {
-    const rd = yearData[i];
-    if (!rd) {
-      ctx.fillStyle = '#e0e0e0';
-      ctx.beginPath();
-      pathGen(features[i]);
-      ctx.fill();
-      continue;
-    }
+  const indices = features.map((_, i) => i);
+  if (useCartogram) {
+    indices.sort((a, b) => cartogramScales[b].scale - cartogramScales[a].scale);
+  }
 
-    let maxVotes = 0, winnerColour = '#e0e0e0';
-    for (const party of parties) {
-      const count = rd.votes[party.id] || 0;
-      if (count > maxVotes) {
-        maxVotes = count;
-        winnerColour = party.colour;
+  for (const i of indices) {
+    const rd = yearData[i];
+
+    let fillColor = '#e0e0e0';
+    if (rd) {
+      let maxVotes = 0;
+      for (const party of parties) {
+        const count = rd.votes[party.id] || 0;
+        if (count > maxVotes) {
+          maxVotes = count;
+          fillColor = party.colour;
+        }
       }
     }
 
-    ctx.fillStyle = winnerColour;
+    ctx.save();
+    if (useCartogram) {
+      const cs = cartogramScales[i];
+      const s = 1 + (cs.scale - 1) * morphT;
+      ctx.translate(cs.cx, cs.cy);
+      ctx.scale(s, s);
+      ctx.translate(-cs.cx, -cs.cy);
+    }
+
+    ctx.fillStyle = fillColor;
     ctx.beginPath();
     pathGen(features[i]);
     ctx.fill();
+
+    if (useCartogram) {
+      const cs = cartogramScales[i];
+      const s = 1 + (cs.scale - 1) * morphT;
+      ctx.strokeStyle = 'rgba(0,0,0,0.2)';
+      ctx.lineWidth = 0.5 / s;
+      ctx.beginPath();
+      pathGen(features[i]);
+      ctx.stroke();
+    }
+    ctx.restore();
   }
 
   ctx.restore();
@@ -266,6 +289,7 @@ export function generateDots(features, projection, electionData, parties, year, 
           x: centroid[0] + r * Math.cos(angle),
           y: centroid[1] + r * Math.sin(angle),
           r: rgb[0], g: rgb[1], b: rgb[2],
+          fi: i,
         });
       }
     }
@@ -281,28 +305,36 @@ export function generateDots(features, projection, electionData, parties, year, 
   return dots;
 }
 
-export function renderDots(ctx, dots, dpr) {
+export function renderDots(ctx, dots, dpr, cartogramScales = null, morphT = 0) {
   ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height);
   if (!dots.length) return;
 
   const r = DOT_RADIUS * dpr;
+  const useCartogram = cartogramScales && morphT > 0;
 
   // Batch by colour for efficient canvas rendering
   const byColor = new Map();
   for (const dot of dots) {
+    let dx = dot.x, dy = dot.y;
+    if (useCartogram && dot.fi !== undefined) {
+      const cs = cartogramScales[dot.fi];
+      const s = 1 + (cs.scale - 1) * morphT;
+      dx = cs.cx + (dot.x - cs.cx) * s;
+      dy = cs.cy + (dot.y - cs.cy) * s;
+    }
     const key = (dot.r << 16) | (dot.g << 8) | dot.b;
     if (!byColor.has(key)) {
       byColor.set(key, { r: dot.r, g: dot.g, b: dot.b, pts: [] });
     }
-    byColor.get(key).pts.push(dot);
+    byColor.get(key).pts.push({ x: dx, y: dy });
   }
 
   for (const [, group] of byColor) {
     ctx.fillStyle = `rgb(${group.r},${group.g},${group.b})`;
     ctx.beginPath();
-    for (const dot of group.pts) {
-      const cx = dot.x * dpr;
-      const cy = dot.y * dpr;
+    for (const pt of group.pts) {
+      const cx = pt.x * dpr;
+      const cy = pt.y * dpr;
       ctx.moveTo(cx + r, cy);
       ctx.arc(cx, cy, r, 0, TWO_PI);
     }
@@ -394,11 +426,13 @@ export function renderBubbles(ctx, symbols, bubbleData, dpr) {
 
 // ─── Value-by-Alpha (shaded choropleth) ──────────────────────────
 
-export function renderAlpha(ctx, features, projection, electionData, parties, year, showNonVoters, dpr) {
+export function renderAlpha(ctx, features, projection, electionData, parties, year, showNonVoters, dpr,
+  cartogramScales = null, morphT = 0) {
   ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height);
   const yearData = electionData[year];
   if (!yearData) return;
 
+  const useCartogram = cartogramScales && morphT > 0;
   const pathGenNoCtx = d3.geoPath(projection);
   const pathGen = d3.geoPath(projection, ctx);
 
@@ -417,35 +451,56 @@ export function renderAlpha(ctx, features, projection, electionData, parties, ye
   ctx.save();
   ctx.scale(dpr, dpr);
 
-  for (let i = 0; i < features.length; i++) {
+  const indices = features.map((_, i) => i);
+  if (useCartogram) {
+    indices.sort((a, b) => cartogramScales[b].scale - cartogramScales[a].scale);
+  }
+
+  for (const i of indices) {
     const rd = yearData[i];
-    if (!rd) {
-      ctx.fillStyle = 'rgba(200,200,200,0.05)';
-      ctx.beginPath();
-      pathGen(features[i]);
-      ctx.fill();
-      continue;
-    }
 
     // Find winner
-    let maxVotes = 0, winnerRgb = [200, 200, 200];
-    for (const party of parties) {
-      const count = rd.votes[party.id] || 0;
-      if (count > maxVotes) {
-        maxVotes = count;
-        winnerRgb = hexToRgb(party.colour);
+    let winnerRgb = [200, 200, 200];
+    if (rd) {
+      let maxVotes = 0;
+      for (const party of parties) {
+        const count = rd.votes[party.id] || 0;
+        if (count > maxVotes) {
+          maxVotes = count;
+          winnerRgb = hexToRgb(party.colour);
+        }
       }
     }
 
     // Alpha from density (log scale to avoid extreme values crushing)
-    const alpha = maxDensity > 0
+    const alpha = rd && maxDensity > 0
       ? Math.min(1, 0.05 + 0.95 * Math.log(1 + densities[i]) / Math.log(1 + maxDensity))
       : 0.05;
+
+    ctx.save();
+    if (useCartogram) {
+      const cs = cartogramScales[i];
+      const s = 1 + (cs.scale - 1) * morphT;
+      ctx.translate(cs.cx, cs.cy);
+      ctx.scale(s, s);
+      ctx.translate(-cs.cx, -cs.cy);
+    }
 
     ctx.fillStyle = `rgba(${winnerRgb[0]},${winnerRgb[1]},${winnerRgb[2]},${alpha.toFixed(3)})`;
     ctx.beginPath();
     pathGen(features[i]);
     ctx.fill();
+
+    if (useCartogram) {
+      const cs = cartogramScales[i];
+      const s = 1 + (cs.scale - 1) * morphT;
+      ctx.strokeStyle = 'rgba(0,0,0,0.15)';
+      ctx.lineWidth = 0.3 / s;
+      ctx.beginPath();
+      pathGen(features[i]);
+      ctx.stroke();
+    }
+    ctx.restore();
   }
 
   ctx.restore();
@@ -498,55 +553,36 @@ export function computeCartogramScales(features, projection, electionData, elect
 }
 
 /**
- * Render a single frame of the cartogram morph.
- * morphT: 0 = geographic, 1 = fully scaled cartogram.
- * Each feature is drawn coloured by winner, scaled around its centroid.
+ * Render scaled feature outlines on the border canvas during cartogram morph.
+ * Used for viz modes that don't draw their own feature paths (dots, pies, bubbles).
  */
-export function renderCartogramFrame(ctx, features, projection, electionData, parties, year, cartogramScales, morphT, dpr) {
+export function renderCartogramOutlines(ctx, features, projection, cartogramScales, morphT, dpr) {
   ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height);
-  const yearData = electionData[year];
-  if (!yearData) return;
+  if (morphT <= 0) return;
 
   const pathGen = d3.geoPath(projection, ctx);
   ctx.save();
   ctx.scale(dpr, dpr);
 
-  // Draw larger-scaled features first (behind), smaller on top
   const indices = features.map((_, i) => i);
-  if (morphT > 0) {
-    indices.sort((a, b) => cartogramScales[b].scale - cartogramScales[a].scale);
-  }
+  indices.sort((a, b) => cartogramScales[b].scale - cartogramScales[a].scale);
 
   for (const i of indices) {
-    const rd = yearData[i];
     const cs = cartogramScales[i];
     const s = 1 + (cs.scale - 1) * morphT;
-
-    // Winner colour
-    let fillColor = '#e0e0e0';
-    if (rd) {
-      let maxVotes = 0;
-      for (const party of parties) {
-        const count = rd.votes[party.id] || 0;
-        if (count > maxVotes) {
-          maxVotes = count;
-          fillColor = party.colour;
-        }
-      }
-    }
 
     ctx.save();
     ctx.translate(cs.cx, cs.cy);
     ctx.scale(s, s);
     ctx.translate(-cs.cx, -cs.cy);
 
-    ctx.fillStyle = fillColor;
+    ctx.fillStyle = '#f0ede8';
     ctx.beginPath();
     pathGen(features[i]);
     ctx.fill();
 
-    ctx.strokeStyle = 'rgba(0,0,0,0.2)';
-    ctx.lineWidth = 0.5 / s;
+    ctx.strokeStyle = 'rgba(0,0,0,0.15)';
+    ctx.lineWidth = 0.3 / s;
     ctx.beginPath();
     pathGen(features[i]);
     ctx.stroke();

@@ -70,6 +70,13 @@ export function buildUI(container) {
   }
   mapCard.appendChild(vizBar);
 
+  // Cartogram shape toggle
+  const cartogramToggle = el('button', {
+    className: 'cartogram-toggle',
+    title: 'Scale regions by population',
+  }, ['\u2B21 Cartogram']);
+  mapCard.appendChild(cartogramToggle);
+
   // Timeline
   const timeline = el('div', { className: 'timeline' });
   const yearDisplay = el('div', { className: 'year-display' }, ['2024']);
@@ -137,6 +144,7 @@ export function buildUI(container) {
     countryButtons,
     vizBar,
     vizButtons,
+    cartogramToggle,
     banner,
     mapCard,
     mapContainer,
