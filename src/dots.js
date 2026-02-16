@@ -179,7 +179,7 @@ export function renderChoropleth(ctx, features, projection, electionData, partie
 
   const indices = features.map((_, i) => i);
   if (useCartogram) {
-    indices.sort((a, b) => cartogramScales[b].scale - cartogramScales[a].scale);
+    indices.sort((a, b) => cartogramScales[a].scale - cartogramScales[b].scale);
   }
 
   for (const i of indices) {
@@ -464,7 +464,7 @@ export function renderAlpha(ctx, features, projection, electionData, parties, ye
 
   const indices = features.map((_, i) => i);
   if (useCartogram) {
-    indices.sort((a, b) => cartogramScales[b].scale - cartogramScales[a].scale);
+    indices.sort((a, b) => cartogramScales[a].scale - cartogramScales[b].scale);
   }
 
   for (const i of indices) {
@@ -576,7 +576,7 @@ export function renderCartogramOutlines(ctx, features, projection, cartogramScal
   ctx.scale(dpr, dpr);
 
   const indices = features.map((_, i) => i);
-  indices.sort((a, b) => cartogramScales[b].scale - cartogramScales[a].scale);
+  indices.sort((a, b) => cartogramScales[a].scale - cartogramScales[b].scale);
 
   for (const i of indices) {
     const cs = cartogramScales[i];
