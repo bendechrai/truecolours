@@ -55,6 +55,8 @@ import {
   generateDots,
   computeDorling,
   computeCartogramScales,
+  computeFeatureTransforms,
+  computeSymbolPositions,
 } from './dots.js';
 
 // ─── computeSymbols ─────────────────────────────────────────────
@@ -408,25 +410,120 @@ describe('computeCartogramScales', () => {
   });
 });
 
-// ─── VIZ_MODES config ───────────────────────────────────────────
+// ─── VIZ_MODES / SHAPE_MODES config ─────────────────────────────
 
 describe('VIZ_MODES config', () => {
-  it('exports all expected modes', async () => {
+  it('exports all expected viz modes', async () => {
     const { VIZ_MODES, DEFAULT_VIZ_MODE } = await import('./config.js');
-    expect(VIZ_MODES).toHaveLength(6);
+    expect(VIZ_MODES).toHaveLength(5);
     const ids = VIZ_MODES.map((m) => m.id);
     expect(ids).toContain('choropleth');
     expect(ids).toContain('dots');
     expect(ids).toContain('pies');
     expect(ids).toContain('bubbles');
     expect(ids).toContain('alpha');
-    expect(ids).toContain('dorling');
     expect(ids).toContain(DEFAULT_VIZ_MODE);
   });
 
   it('default mode is dot density', async () => {
     const { DEFAULT_VIZ_MODE } = await import('./config.js');
     expect(DEFAULT_VIZ_MODE).toBe('dots');
+  });
+});
+
+describe('SHAPE_MODES config', () => {
+  it('exports all expected shape modes', async () => {
+    const { SHAPE_MODES, DEFAULT_SHAPE, SHAPE_COMPAT } = await import('./config.js');
+    expect(SHAPE_MODES).toHaveLength(3);
+    const ids = SHAPE_MODES.map((m) => m.id);
+    expect(ids).toContain('geo');
+    expect(ids).toContain('dorling');
+    expect(ids).toContain('cartogram');
+    expect(ids).toContain(DEFAULT_SHAPE);
+  });
+
+  it('classic and shaded do not support dorling', async () => {
+    const { SHAPE_COMPAT } = await import('./config.js');
+    expect(SHAPE_COMPAT.choropleth).not.toContain('dorling');
+    expect(SHAPE_COMPAT.alpha).not.toContain('dorling');
+  });
+
+  it('dot density supports all three shapes', async () => {
+    const { SHAPE_COMPAT } = await import('./config.js');
+    expect(SHAPE_COMPAT.dots).toContain('geo');
+    expect(SHAPE_COMPAT.dots).toContain('dorling');
+    expect(SHAPE_COMPAT.dots).toContain('cartogram');
+  });
+});
+
+// ─── computeFeatureTransforms ────────────────────────────────────
+
+describe('computeFeatureTransforms', () => {
+  it('returns identity transforms for geo→geo', () => {
+    const symbols = [
+      { featureIndex: 0, x: 10, y: 20, radius: 5 },
+      { featureIndex: 1, x: 30, y: 40, radius: 8 },
+    ];
+    const result = computeFeatureTransforms(2, symbols, null, null, 'geo', 'geo', 1);
+    expect(result).toHaveLength(2);
+    result.forEach(ft => {
+      expect(ft.ax).toBe(1);
+      expect(ft.bx).toBe(0);
+      expect(ft.ay).toBe(1);
+      expect(ft.by).toBe(0);
+    });
+  });
+
+  it('returns cartogram affine at t=1 for geo→cartogram', () => {
+    const symbols = [{ featureIndex: 0, x: 100, y: 200, radius: 5 }];
+    const cartogramScales = [{ scale: 2, cx: 100, cy: 200 }];
+    const result = computeFeatureTransforms(1, symbols, null, cartogramScales, 'geo', 'cartogram', 1);
+    const ft = result[0];
+    expect(ft.ax).toBe(2);
+    expect(ft.bx).toBeCloseTo(100 * (1 - 2));
+    expect(ft.ay).toBe(2);
+    expect(ft.by).toBeCloseTo(200 * (1 - 2));
+  });
+
+  it('interpolates between geo and dorling', () => {
+    const symbols = [{ featureIndex: 0, x: 10, y: 20, radius: 5 }];
+    const dorlingMap = new Map([[0, { x: 30, y: 50 }]]);
+    const result = computeFeatureTransforms(1, symbols, dorlingMap, null, 'geo', 'dorling', 0.5);
+    const ft = result[0];
+    // At t=0.5: bx should be halfway between 0 and (30-10)=20 → 10
+    expect(ft.ax).toBe(1);
+    expect(ft.bx).toBeCloseTo(10);
+    expect(ft.ay).toBe(1);
+    expect(ft.by).toBeCloseTo(15);
+  });
+});
+
+// ─── computeSymbolPositions ──────────────────────────────────────
+
+describe('computeSymbolPositions', () => {
+  it('returns geo positions for geo→geo', () => {
+    const symbols = [
+      { featureIndex: 0, x: 10, y: 20, radius: 5 },
+      { featureIndex: 1, x: 30, y: 40, radius: 8 },
+    ];
+    const result = computeSymbolPositions(symbols, null, 'geo', 'geo', 1);
+    expect(result[0]).toEqual({ x: 10, y: 20 });
+    expect(result[1]).toEqual({ x: 30, y: 40 });
+  });
+
+  it('returns dorling positions at t=1 for geo→dorling', () => {
+    const symbols = [{ featureIndex: 0, x: 10, y: 20, radius: 5 }];
+    const dorlingMap = new Map([[0, { x: 50, y: 60 }]]);
+    const result = computeSymbolPositions(symbols, dorlingMap, 'geo', 'dorling', 1);
+    expect(result[0]).toEqual({ x: 50, y: 60 });
+  });
+
+  it('interpolates positions at t=0.5', () => {
+    const symbols = [{ featureIndex: 0, x: 10, y: 20, radius: 5 }];
+    const dorlingMap = new Map([[0, { x: 30, y: 40 }]]);
+    const result = computeSymbolPositions(symbols, dorlingMap, 'geo', 'dorling', 0.5);
+    expect(result[0].x).toBeCloseTo(20);
+    expect(result[0].y).toBeCloseTo(30);
   });
 });
 

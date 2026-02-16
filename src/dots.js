@@ -118,7 +118,7 @@ export function colourSymbols(symbols, electionData, features, parties, year, sh
 
 // ─── Render pie symbols ──────────────────────────────────────────
 
-export function renderSymbols(ctx, symbols, pieData, dpr) {
+export function renderSymbols(ctx, symbols, pieData, dpr, positions = null) {
   ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height);
   if (!symbols.length) return;
 
@@ -130,8 +130,8 @@ export function renderSymbols(ctx, symbols, pieData, dpr) {
     const pd = pieData[idx];
     if (!pd?.slices.length) continue;
 
-    const cx = sym.x * dpr;
-    const cy = sym.y * dpr;
+    const cx = (positions ? positions[idx].x : sym.x) * dpr;
+    const cy = (positions ? positions[idx].y : sym.y) * dpr;
     const r = sym.radius * dpr;
 
     if (sym.radius < BLEND_RADIUS) {
@@ -305,22 +305,20 @@ export function generateDots(features, projection, electionData, parties, year, 
   return dots;
 }
 
-export function renderDots(ctx, dots, dpr, cartogramScales = null, morphT = 0) {
+export function renderDots(ctx, dots, dpr, featureTransforms = null) {
   ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height);
   if (!dots.length) return;
 
   const r = DOT_RADIUS * dpr;
-  const useCartogram = cartogramScales && morphT > 0;
 
   // Batch by colour for efficient canvas rendering
   const byColor = new Map();
   for (const dot of dots) {
     let dx = dot.x, dy = dot.y;
-    if (useCartogram && dot.fi !== undefined) {
-      const cs = cartogramScales[dot.fi];
-      const s = 1 + (cs.scale - 1) * morphT;
-      dx = cs.cx + (dot.x - cs.cx) * s;
-      dy = cs.cy + (dot.y - cs.cy) * s;
+    if (featureTransforms && dot.fi !== undefined) {
+      const ft = featureTransforms[dot.fi];
+      dx = ft.ax * dot.x + ft.bx;
+      dy = ft.ay * dot.y + ft.by;
     }
     const key = (dot.r << 16) | (dot.g << 8) | dot.b;
     if (!byColor.has(key)) {
@@ -381,7 +379,7 @@ export function colourBubbles(symbols, electionData, features, parties, year, sh
   });
 }
 
-export function renderBubbles(ctx, symbols, bubbleData, dpr) {
+export function renderBubbles(ctx, symbols, bubbleData, dpr, positions = null) {
   ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height);
   if (!symbols.length) return;
 
@@ -393,8 +391,8 @@ export function renderBubbles(ctx, symbols, bubbleData, dpr) {
     const bd = bubbleData[idx];
     if (!bd?.circles.length) continue;
 
-    const cx = sym.x * dpr;
-    const cy = sym.y * dpr;
+    const cx = (positions ? positions[idx].x : sym.x) * dpr;
+    const cy = (positions ? positions[idx].y : sym.y) * dpr;
 
     if (sym.radius < BLEND_RADIUS) {
       let tr = 0, tg = 0, tb = 0, totalArea = 0;
@@ -611,6 +609,78 @@ export function computeDorling(baseSymbols) {
   for (let i = 0; i < 300; i++) sim.tick();
 
   return nodes;
+}
+
+// ─── Shape transforms (geo ↔ dorling ↔ cartogram) ────────────────
+
+const IDENTITY_AFFINE = { ax: 1, bx: 0, ay: 1, by: 0 };
+
+function getAffine(fi, shape, geoCentroids, dorlingSymbolMap, cartogramScales) {
+  if (shape === 'cartogram' && cartogramScales) {
+    const cs = cartogramScales[fi];
+    if (!cs || cs.scale === 0) return IDENTITY_AFFINE;
+    return {
+      ax: cs.scale,
+      bx: cs.cx * (1 - cs.scale),
+      ay: cs.scale,
+      by: cs.cy * (1 - cs.scale),
+    };
+  }
+  if (shape === 'dorling' && dorlingSymbolMap) {
+    const geo = geoCentroids.get(fi);
+    const ds = dorlingSymbolMap.get(fi);
+    if (geo && ds) {
+      return { ax: 1, bx: ds.x - geo.x, ay: 1, by: ds.y - geo.y };
+    }
+  }
+  return IDENTITY_AFFINE;
+}
+
+/**
+ * Per-feature affine transforms for dot-density rendering.
+ * newX = ax * x + bx,  newY = ay * y + by
+ */
+export function computeFeatureTransforms(featureCount, symbols, dorlingSymbolMap, cartogramScales, fromShape, toShape, t) {
+  const geoCentroids = new Map();
+  for (const sym of symbols) {
+    geoCentroids.set(sym.featureIndex, { x: sym.x, y: sym.y });
+  }
+
+  const transforms = new Array(featureCount);
+  for (let fi = 0; fi < featureCount; fi++) {
+    const from = getAffine(fi, fromShape, geoCentroids, dorlingSymbolMap, cartogramScales);
+    const to = getAffine(fi, toShape, geoCentroids, dorlingSymbolMap, cartogramScales);
+    transforms[fi] = {
+      ax: from.ax + (to.ax - from.ax) * t,
+      bx: from.bx + (to.bx - from.bx) * t,
+      ay: from.ay + (to.ay - from.ay) * t,
+      by: from.by + (to.by - from.by) * t,
+    };
+  }
+  return transforms;
+}
+
+/**
+ * Interpolated positions for symbol-based renderers (pies, bubbles).
+ */
+export function computeSymbolPositions(symbols, dorlingSymbolMap, fromShape, toShape, t) {
+  return symbols.map(sym => {
+    const fi = sym.featureIndex;
+    const from = getSymbolPos(sym, fi, dorlingSymbolMap, fromShape);
+    const to = getSymbolPos(sym, fi, dorlingSymbolMap, toShape);
+    return {
+      x: from.x + (to.x - from.x) * t,
+      y: from.y + (to.y - from.y) * t,
+    };
+  });
+}
+
+function getSymbolPos(sym, fi, dorlingSymbolMap, shape) {
+  if (shape === 'dorling' && dorlingSymbolMap) {
+    const ds = dorlingSymbolMap.get(fi);
+    if (ds) return ds;
+  }
+  return sym; // geo and cartogram both use the geo centroid
 }
 
 // ─── Borders ─────────────────────────────────────────────────────

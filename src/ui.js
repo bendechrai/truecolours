@@ -1,6 +1,6 @@
 // DOM generation, legend, tooltips, year display, timeline controls
 
-import { COUNTRIES, AUTOPLAY_INTERVAL, VIZ_MODES } from './config.js';
+import { COUNTRIES, AUTOPLAY_INTERVAL, VIZ_MODES, SHAPE_MODES, MODE_INFO, SHAPE_INFO } from './config.js';
 
 /**
  * Build the entire page DOM structure.
@@ -41,6 +41,10 @@ export function buildUI(container) {
   ]);
   container.appendChild(banner);
 
+  // Mode description panel
+  const modeDescription = el('div', { className: 'mode-description' });
+  container.appendChild(modeDescription);
+
   // Map card
   const mapCard = el('div', { className: 'map-card' });
   const mapContainer = el('div', { className: 'map-container' });
@@ -70,12 +74,15 @@ export function buildUI(container) {
   }
   mapCard.appendChild(vizBar);
 
-  // Cartogram shape toggle
-  const cartogramToggle = el('button', {
-    className: 'cartogram-toggle',
-    title: 'Scale regions by population',
-  }, ['\u2B21 Cartogram']);
-  mapCard.appendChild(cartogramToggle);
+  // Shape selector (Geographic / Dorling / Cartogram)
+  const shapeBar = el('div', { className: 'shape-bar' });
+  const shapeButtons = {};
+  for (const mode of SHAPE_MODES) {
+    const btn = el('button', { className: 'shape-btn', 'data-shape': mode.id }, [mode.name]);
+    shapeButtons[mode.id] = btn;
+    shapeBar.appendChild(btn);
+  }
+  mapCard.appendChild(shapeBar);
 
   // Timeline
   const timeline = el('div', { className: 'timeline' });
@@ -144,7 +151,9 @@ export function buildUI(container) {
     countryButtons,
     vizBar,
     vizButtons,
-    cartogramToggle,
+    shapeBar,
+    shapeButtons,
+    modeDescription,
     banner,
     mapCard,
     mapContainer,
@@ -303,6 +312,42 @@ export function createAutoplay(playBtn, getElections, getCurrentIndex, goToIndex
   }
 
   return { toggle, start, stop, isPlaying: () => !!interval };
+}
+
+/**
+ * Update the mode description panel with current viz mode + shape info.
+ */
+export function updateModeDescription(descEl, vizMode, shape) {
+  const modeInfo = MODE_INFO[vizMode];
+  const shapeInfo = SHAPE_INFO[shape];
+  if (!modeInfo) return;
+
+  descEl.innerHTML = '';
+
+  const titleParts = [modeInfo.title];
+  if (shape !== 'geo') titleParts.push(shapeInfo.label);
+
+  descEl.appendChild(el('div', { className: 'mode-desc-header' }, [
+    titleParts.join(' \u00b7 '),
+  ]));
+
+  descEl.appendChild(el('p', {}, [modeInfo.purpose]));
+  descEl.appendChild(el('p', {}, [modeInfo.insight]));
+
+  const accuracyClass = modeInfo.accuracy === 'High' ? 'high'
+    : modeInfo.accuracy === 'Moderate' ? 'moderate' : 'low';
+
+  descEl.appendChild(el('p', { className: `mode-desc-accuracy ${accuracyClass}` }, [
+    el('strong', {}, [`${modeInfo.accuracy}`]),
+    ` \u2014 ${modeInfo.accuracyDetail}`,
+  ]));
+
+  if (shape !== 'geo' && shapeInfo) {
+    descEl.appendChild(el('p', { className: 'mode-desc-shape-detail' }, [
+      el('strong', {}, [`${shapeInfo.label}: `]),
+      shapeInfo.detail,
+    ]));
+  }
 }
 
 function buildExplainer() {

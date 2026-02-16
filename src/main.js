@@ -3,7 +3,7 @@
 
 import './style.css';
 import * as d3 from 'd3';
-import { COUNTRIES, DEFAULT_COUNTRY, DEFAULT_VIZ_MODE, RESIZE_DEBOUNCE } from './config.js';
+import { COUNTRIES, DEFAULT_COUNTRY, DEFAULT_VIZ_MODE, DEFAULT_SHAPE, SHAPE_COMPAT, RESIZE_DEBOUNCE } from './config.js';
 import { loadUS, loadGeoJSONCountry } from './geoLoader.js';
 import { loadElectionData } from './electionData.js';
 import {
@@ -14,12 +14,14 @@ import {
   renderAlpha,
   computeDorling,
   computeCartogramScales, renderCartogramOutlines,
+  computeFeatureTransforms, computeSymbolPositions,
   renderBorders, buildHitTestCanvas,
 } from './dots.js';
 import {
   buildUI,
   updateLegend,
   updateYearLabels,
+  updateModeDescription,
   showTooltip,
   hideTooltip,
   createAutoplay,
@@ -31,12 +33,15 @@ const state = {
   yearIndex: 0,
   showNonVoters: false,
   vizMode: DEFAULT_VIZ_MODE,
-  cartogramShape: false,
-  symbols: [],
-  dorlingSymbols: [],
-  cartogramScales: null,
+  shape: DEFAULT_SHAPE,
+  morphFrom: DEFAULT_SHAPE,
+  morphTo: DEFAULT_SHAPE,
   morphT: 0,
   morphRafId: null,
+  symbols: [],
+  dorlingSymbols: [],
+  dorlingSymbolMap: null,
+  cartogramScales: null,
   cachedDots: null,
   cachedDotsKey: null,
   pieData: null,
@@ -69,8 +74,12 @@ function init() {
   }
   setActiveVizButton(state.vizMode);
 
-  // Wire cartogram shape toggle
-  ui.cartogramToggle.addEventListener('click', () => toggleCartogramShape());
+  // Wire shape buttons
+  for (const [id, btn] of Object.entries(ui.shapeButtons)) {
+    btn.addEventListener('click', () => setShape(id));
+  }
+  setActiveShapeButton(state.shape);
+  updateShapeButtonStates();
 
   // Wire timeline controls
   ui.prevBtn.addEventListener('click', () => stepYear(-1));
@@ -165,8 +174,15 @@ async function switchCountry(id) {
     // Compute proportional symbols (step 3 of 4)
     state.symbols = computeSymbols(state.geoData.features, state.geoData.projection, width, height, state.electionData, config.elections);
     state.dorlingSymbols = computeDorling(state.symbols);
+    state.dorlingSymbolMap = new Map();
+    for (const ds of state.dorlingSymbols) {
+      state.dorlingSymbolMap.set(ds.featureIndex, { x: ds.x, y: ds.y });
+    }
     state.cartogramScales = computeCartogramScales(state.geoData.features, state.geoData.projection, state.electionData, config.elections);
-    state.morphT = state.cartogramShape ? 1 : 0;
+    // Snap to current shape (no animation on country switch)
+    state.morphFrom = state.shape;
+    state.morphTo = state.shape;
+    state.morphT = 0;
     state.cachedDots = null;
     state.cachedDotsKey = null;
     updateLoadingProgress('Rendering... 75%');
@@ -183,16 +199,13 @@ async function switchCountry(id) {
 
     // Colour and render (step 4 of 4)
     colourAndRender();
-
-    // Render borders (cartogram mode renders its own on the border canvas)
-    if (!state.cartogramShape) {
-      const borderCtx = ui.borderCanvas.getContext('2d');
-      renderBorders(borderCtx, state.geoData, state.geoData.projection, dpr);
-    }
+    updateBorderCanvas();
 
     // Update UI
     updateLegendUI();
     updateTimelineUI();
+    updateModeDescription(ui.modeDescription, state.vizMode, state.shape);
+    updateShapeButtonStates();
 
     hideLoading();
   } catch (err) {
@@ -225,25 +238,30 @@ function colourAndRender() {
   const year = config.elections[state.yearIndex];
   const dotCtx = ui.dotCanvas.getContext('2d');
 
-  // Cartogram params — pass to renderers when morphing
-  const cs = state.morphT > 0 ? state.cartogramScales : null;
-  const mt = state.morphT;
+  // Effective cartogram morph for path-based renderers
+  const cmt = getCartogramMorphT();
 
-  // Update border canvas during cartogram morph for non-path viz modes
-  if (mt > 0 && state.vizMode !== 'choropleth' && state.vizMode !== 'alpha') {
-    const borderCtx = ui.borderCanvas.getContext('2d');
-    renderCartogramOutlines(borderCtx, state.geoData.features, state.geoData.projection,
-      state.cartogramScales, mt, dpr);
-  }
+  // Pre-compute shape transforms / positions for non-path renderers
+  const isGeoStatic = state.morphFrom === 'geo' && state.morphTo === 'geo';
+  const ft = !isGeoStatic ? computeFeatureTransforms(
+    state.geoData.features.length, state.symbols, state.dorlingSymbolMap,
+    state.cartogramScales, state.morphFrom, state.morphTo,
+    easeInOutCubic(state.morphT),
+  ) : null;
+  const positions = !isGeoStatic ? computeSymbolPositions(
+    state.symbols, state.dorlingSymbolMap,
+    state.morphFrom, state.morphTo,
+    easeInOutCubic(state.morphT),
+  ) : null;
 
   switch (state.vizMode) {
     case 'choropleth':
       renderChoropleth(dotCtx, state.geoData.features, state.geoData.projection,
-        state.electionData, config.parties, year, dpr, cs, mt);
+        state.electionData, config.parties, year, dpr,
+        cmt > 0 ? state.cartogramScales : null, cmt);
       break;
 
     case 'dots': {
-      // Cache dots for smooth morph animation (avoid regenerating ~100k dots per frame)
       const dotsKey = `${year}-${state.showNonVoters}`;
       if (state.cachedDotsKey !== dotsKey) {
         state.cachedDots = generateDots(
@@ -253,34 +271,28 @@ function colourAndRender() {
         );
         state.cachedDotsKey = dotsKey;
       }
-      renderDots(dotCtx, state.cachedDots, dpr, cs, mt);
+      renderDots(dotCtx, state.cachedDots, dpr, ft);
       break;
     }
 
     case 'pies':
       state.pieData = colourSymbols(state.symbols, state.electionData,
         state.geoData.features, config.parties, year, state.showNonVoters);
-      renderSymbols(dotCtx, state.symbols, state.pieData, dpr);
+      renderSymbols(dotCtx, state.symbols, state.pieData, dpr, positions);
       break;
 
     case 'bubbles': {
       const bubbleData = colourBubbles(state.symbols, state.electionData,
         state.geoData.features, config.parties, year, state.showNonVoters);
-      renderBubbles(dotCtx, state.symbols, bubbleData, dpr);
+      renderBubbles(dotCtx, state.symbols, bubbleData, dpr, positions);
       break;
     }
 
     case 'alpha':
       renderAlpha(dotCtx, state.geoData.features, state.geoData.projection,
-        state.electionData, config.parties, year, state.showNonVoters, dpr, cs, mt);
+        state.electionData, config.parties, year, state.showNonVoters, dpr,
+        cmt > 0 ? state.cartogramScales : null, cmt);
       break;
-
-    case 'dorling': {
-      const dorlingPieData = colourSymbols(state.dorlingSymbols, state.electionData,
-        state.geoData.features, config.parties, year, state.showNonVoters);
-      renderSymbols(dotCtx, state.dorlingSymbols, dorlingPieData, dpr);
-      break;
-    }
   }
 }
 
@@ -288,67 +300,63 @@ function setVizMode(modeId) {
   state.vizMode = modeId;
   setActiveVizButton(modeId);
 
-  // Dorling has its own shape — disable cartogram toggle and force geographic
-  if (modeId === 'dorling') {
-    ui.cartogramToggle.classList.add('disabled');
-    if (state.cartogramShape) {
-      state.cartogramShape = false;
-      ui.cartogramToggle.classList.remove('active');
-      cancelMorph();
-      state.morphT = 0;
-      const borderCtx = ui.borderCanvas.getContext('2d');
-      renderBorders(borderCtx, state.geoData, state.geoData.projection, dpr);
-    }
-  } else {
-    ui.cartogramToggle.classList.remove('disabled');
+  // If current shape is incompatible with this viz mode, fall back to geo
+  const compat = SHAPE_COMPAT[modeId] || ['geo'];
+  if (!compat.includes(state.shape)) {
+    cancelMorph();
+    state.shape = 'geo';
+    state.morphFrom = 'geo';
+    state.morphTo = 'geo';
+    state.morphT = 0;
+    setActiveShapeButton('geo');
   }
+  updateShapeButtonStates();
 
   // Clear dot cache when switching modes
   state.cachedDots = null;
   state.cachedDotsKey = null;
 
   colourAndRender();
+  updateBorderCanvas();
+  updateModeDescription(ui.modeDescription, state.vizMode, state.shape);
 }
 
-// ─── Cartogram toggle ───────────────────────────────────────────
+// ─── Shape switching (geo / dorling / cartogram) ────────────────
 
-function toggleCartogramShape() {
-  if (state.vizMode === 'dorling') return;
-
-  state.cartogramShape = !state.cartogramShape;
-  ui.cartogramToggle.classList.toggle('active', state.cartogramShape);
+function setShape(newShape) {
+  if (newShape === state.shape) return;
+  const compat = SHAPE_COMPAT[state.vizMode] || ['geo'];
+  if (!compat.includes(newShape)) return;
 
   cancelMorph();
+  const prevShape = state.shape;
+  state.shape = newShape;
+  state.morphFrom = prevShape;
+  state.morphTo = newShape;
+  setActiveShapeButton(newShape);
+  updateModeDescription(ui.modeDescription, state.vizMode, state.shape);
 
-  const borderCtx = ui.borderCanvas.getContext('2d');
-
-  if (state.cartogramShape) {
-    borderCtx.clearRect(0, 0, ui.borderCanvas.width, ui.borderCanvas.height);
-    animateMorph(0, 1, 800);
-  } else {
-    animateMorph(1, 0, 800, () => {
-      renderBorders(borderCtx, state.geoData, state.geoData.projection, dpr);
-    });
-  }
+  animateShapeTransition();
 }
 
-// ─── Morph animation ────────────────────────────────────────────
-
-function animateMorph(from, to, duration, onComplete) {
+function animateShapeTransition() {
   cancelMorph();
   const startTime = performance.now();
-  state.morphT = from;
+  const duration = 800;
+  state.morphT = 0;
 
   function frame(now) {
     const elapsed = now - startTime;
     const progress = Math.min(elapsed / duration, 1);
-    state.morphT = from + (to - from) * easeInOutCubic(progress);
+    state.morphT = progress;
     colourAndRender();
+    updateBorderCanvas();
     if (progress < 1) {
       state.morphRafId = requestAnimationFrame(frame);
     } else {
       state.morphRafId = null;
-      if (onComplete) onComplete();
+      // Snap: both from and to are now the target shape
+      state.morphFrom = state.morphTo;
     }
   }
 
@@ -366,9 +374,57 @@ function easeInOutCubic(t) {
   return t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
 }
 
+/**
+ * Effective cartogram morph T for path-based renderers (choropleth, alpha).
+ * Returns 0–1 where 0 = no cartogram, 1 = full cartogram.
+ */
+function getCartogramMorphT() {
+  const easedT = easeInOutCubic(state.morphT);
+  if (state.morphFrom === 'cartogram' && state.morphTo === 'cartogram') return 1;
+  if (state.morphTo === 'cartogram') return easedT;
+  if (state.morphFrom === 'cartogram') return 1 - easedT;
+  return 0;
+}
+
+/**
+ * Update border canvas based on current shape state.
+ */
+function updateBorderCanvas() {
+  if (!state.geoData) return;
+  const borderCtx = ui.borderCanvas.getContext('2d');
+  const isPathMode = state.vizMode === 'choropleth' || state.vizMode === 'alpha';
+  const cmt = getCartogramMorphT();
+  const atGeo = state.morphFrom === 'geo' && state.morphTo === 'geo';
+
+  if (cmt > 0 && !isPathMode) {
+    // Non-path modes with cartogram active: show scaled outlines
+    renderCartogramOutlines(borderCtx, state.geoData.features, state.geoData.projection,
+      state.cartogramScales, cmt, dpr);
+  } else if (atGeo) {
+    // Fully at geo: show normal borders
+    renderBorders(borderCtx, state.geoData, state.geoData.projection, dpr);
+  } else {
+    // Dorling transition or path-mode cartogram: clear borders
+    borderCtx.clearRect(0, 0, ui.borderCanvas.width, ui.borderCanvas.height);
+  }
+}
+
 function setActiveVizButton(id) {
   for (const [mid, btn] of Object.entries(ui.vizButtons)) {
     btn.classList.toggle('active', mid === id);
+  }
+}
+
+function setActiveShapeButton(id) {
+  for (const [sid, btn] of Object.entries(ui.shapeButtons)) {
+    btn.classList.toggle('active', sid === id);
+  }
+}
+
+function updateShapeButtonStates() {
+  const compat = SHAPE_COMPAT[state.vizMode] || ['geo'];
+  for (const [sid, btn] of Object.entries(ui.shapeButtons)) {
+    btn.classList.toggle('disabled', !compat.includes(sid));
   }
 }
 

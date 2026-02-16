@@ -237,36 +237,87 @@ body {
   border-color: var(--text);
 }
 
-/* Cartogram shape toggle */
-.cartogram-toggle {
-  display: block;
-  margin: 0.5rem auto 0;
+/* Shape selector (Geographic / Dorling / Cartogram) */
+.shape-bar {
+  display: flex;
+  justify-content: center;
+  gap: 0.35rem;
+  padding: 0.5rem 0 0;
+}
+
+.shape-btn {
   font-family: var(--font-body);
   font-size: 0.78rem;
   font-weight: 500;
-  padding: 0.3rem 0.9rem;
+  padding: 0.3rem 0.8rem;
   border: 1px solid var(--card-border);
   border-radius: 999px;
   background: var(--card-bg);
   color: var(--text-muted);
   cursor: pointer;
-  transition: background 0.15s, color 0.15s, border-color 0.15s;
+  transition: background 0.15s, color 0.15s, border-color 0.15s, opacity 0.15s;
+  white-space: nowrap;
 }
 
-.cartogram-toggle:hover {
+.shape-btn:hover {
   background: #f0ede8;
   color: var(--text);
 }
 
-.cartogram-toggle.active {
+.shape-btn.active {
   background: var(--text);
   color: #fff;
   border-color: var(--text);
 }
 
-.cartogram-toggle.disabled {
-  opacity: 0.4;
+.shape-btn.disabled {
+  opacity: 0.35;
   pointer-events: none;
+}
+
+/* Mode description panel */
+.mode-description {
+  background: var(--card-bg);
+  border: 1px solid var(--card-border);
+  border-radius: var(--radius);
+  padding: 1rem 1.25rem;
+  margin-bottom: 1rem;
+  font-size: 0.88rem;
+  line-height: 1.5;
+}
+
+.mode-desc-header {
+  font-family: var(--font-display);
+  font-size: 1.3rem;
+  margin-bottom: 0.5rem;
+}
+
+.mode-description p {
+  color: var(--text-muted);
+  margin-bottom: 0.4rem;
+}
+
+.mode-desc-accuracy {
+  font-size: 0.82rem;
+}
+
+.mode-desc-accuracy.high strong {
+  color: #2e7d32;
+}
+
+.mode-desc-accuracy.moderate strong {
+  color: #f57f17;
+}
+
+.mode-desc-accuracy.low strong {
+  color: #c62828;
+}
+
+.mode-desc-shape-detail {
+  font-size: 0.82rem;
+  border-top: 1px solid #eee;
+  padding-top: 0.4rem;
+  margin-top: 0.4rem;
 }
 
 /* Timeline */
@@ -643,6 +694,20 @@ body {
     padding: 0.25rem 0.6rem;
   }
 
+  .shape-btn {
+    font-size: 0.72rem;
+    padding: 0.25rem 0.6rem;
+  }
+
+  .mode-description {
+    padding: 0.75rem 1rem;
+    font-size: 0.82rem;
+  }
+
+  .mode-desc-header {
+    font-size: 1.1rem;
+  }
+
   .tooltip {
     max-width: 220px;
     font-size: 0.78rem;
@@ -669,6 +734,11 @@ body {
   }
 
   .viz-btn {
+    font-size: 0.68rem;
+    padding: 0.2rem 0.5rem;
+  }
+
+  .shape-btn {
     font-size: 0.68rem;
     padding: 0.2rem 0.5rem;
   }
