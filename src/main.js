@@ -182,6 +182,9 @@ async function switchCountry(id) {
       state.geoData.fitCollection,
     );
 
+    // Compute cartogram scales (expensive pixel-area measurement, run once).
+    state.cartogramScales = computeCartogramScales(state.geoData.features, state.geoData.projection, state.electionData, config.elections);
+
     // Compute cartogram, symbols, and Dorling on the final projection.
     state.cartogramScales = computeCartogramNudge(state.cartogramScales, state.geoData.features, state.geoData.projection);
     state.symbols = computeSymbols(state.geoData.features, state.geoData.projection, width, height, state.electionData, config.elections);
