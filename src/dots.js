@@ -392,7 +392,8 @@ export function colourBubbles(symbols, electionData, features, parties, year, sh
     }
 
     // Sort ascending by count — smallest drawn on top, largest behind.
-    // Build cumulative radii so each visible ring area ∝ that party's votes.
+    // Build cumulative radii so each visible ring WIDTH ∝ that party's votes.
+    // (Radius-proportional, not area-proportional — perceptually clearer.)
     entries.sort((a, b) => a.count - b.count);
 
     const circles = [];
@@ -400,7 +401,7 @@ export function colourBubbles(symbols, electionData, features, parties, year, sh
     for (const e of entries) {
       cumCount += e.count;
       circles.push({
-        radius: sym.radius * Math.sqrt(cumCount / denominator),
+        radius: sym.radius * (cumCount / denominator),
         weight: e.count,
         r: e.r, g: e.g, b: e.b,
       });

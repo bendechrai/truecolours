@@ -203,7 +203,7 @@ describe('colourBubbles', () => {
     expect(outerArea).toBeCloseTo(Math.PI * R * R, 1);
   });
 
-  it('visible ring areas are proportional to votes', () => {
+  it('visible ring widths are proportional to votes', () => {
     const R = 20;
     const symbols = [{ featureIndex: 0, x: 0, y: 0, radius: R }];
     const data = {
@@ -214,11 +214,11 @@ describe('colourBubbles', () => {
     // Dem has more votes → its circle is the outer one
     const demCircle = circles.find((c) => c.r === 0x13);
     const repCircle = circles.find((c) => c.r === 0xe8);
-    // Visible ring area of outer (dem) = πR_dem² - πR_rep²
-    const demVisibleArea = Math.PI * (demCircle.radius ** 2 - repCircle.radius ** 2);
-    const repVisibleArea = Math.PI * repCircle.radius ** 2;
-    // Ratio of visible areas should match vote ratio (600:400 = 1.5)
-    expect(demVisibleArea / repVisibleArea).toBeCloseTo(600 / 400, 2);
+    // Visible ring width of outer (dem) = R_dem - R_rep
+    const demRingWidth = demCircle.radius - repCircle.radius;
+    const repRingWidth = repCircle.radius;
+    // Ratio of ring widths should match vote ratio (600:400 = 1.5)
+    expect(demRingWidth / repRingWidth).toBeCloseTo(600 / 400, 2);
   });
 });
 
