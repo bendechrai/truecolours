@@ -55,6 +55,7 @@ import {
   generateDots,
   computeDorling,
   computeCartogramScales,
+  computeCartogramNudge,
   computeFeatureTransforms,
   computeSymbolPositions,
 } from './dots.js';
@@ -413,6 +414,62 @@ describe('computeCartogramScales', () => {
   });
 });
 
+// ─── computeCartogramNudge ────────────────────────────────────────
+
+describe('computeCartogramNudge', () => {
+  it('returns dx=0, dy=0 for non-overlapping features', () => {
+    // Two features far apart — no collision needed
+    const scales = [
+      { scale: 1, cx: 10, cy: 10 },
+      { scale: 1, cx: 200, cy: 200 },
+    ];
+    const features = makeFeatures(2);
+    const result = computeCartogramNudge(scales, features, mockProjection());
+    expect(result).toHaveLength(2);
+    // With features far apart, nudge should be near zero
+    expect(Math.abs(result[0].dx)).toBeLessThan(5);
+    expect(Math.abs(result[0].dy)).toBeLessThan(5);
+    expect(Math.abs(result[1].dx)).toBeLessThan(5);
+    expect(Math.abs(result[1].dy)).toBeLessThan(5);
+  });
+
+  it('pushes overlapping features apart', () => {
+    // Two features at the same centroid with large scale — should be pushed apart
+    const scales = [
+      { scale: 5, cx: 100, cy: 100 },
+      { scale: 5, cx: 100, cy: 100 },
+    ];
+    const features = makeFeatures(2);
+    const result = computeCartogramNudge(scales, features, mockProjection());
+    // At least one feature should have a non-zero nudge
+    const totalNudge = Math.abs(result[0].dx) + Math.abs(result[0].dy) +
+                       Math.abs(result[1].dx) + Math.abs(result[1].dy);
+    expect(totalNudge).toBeGreaterThan(0);
+  });
+
+  it('preserves scale, cx, cy from input', () => {
+    const scales = [
+      { scale: 2, cx: 50, cy: 60 },
+    ];
+    const features = makeFeatures(1);
+    const result = computeCartogramNudge(scales, features, mockProjection());
+    expect(result[0].scale).toBe(2);
+    expect(result[0].cx).toBe(50);
+    expect(result[0].cy).toBe(60);
+  });
+
+  it('handles features with scale=0', () => {
+    const scales = [
+      { scale: 0, cx: 10, cy: 10 },
+      { scale: 2, cx: 50, cy: 50 },
+    ];
+    const features = makeFeatures(2);
+    const result = computeCartogramNudge(scales, features, mockProjection());
+    expect(result[0].dx).toBe(0);
+    expect(result[0].dy).toBe(0);
+  });
+});
+
 // ─── VIZ_MODES / SHAPE_MODES config ─────────────────────────────
 
 describe('VIZ_MODES config', () => {
@@ -488,6 +545,17 @@ describe('computeFeatureTransforms', () => {
     expect(ft.by).toBeCloseTo(200 * (1 - 2));
   });
 
+  it('includes nudge offsets in cartogram affine', () => {
+    const symbols = [{ featureIndex: 0, x: 100, y: 200, radius: 5 }];
+    const cartogramScales = [{ scale: 2, cx: 100, cy: 200, dx: 15, dy: -10 }];
+    const result = computeFeatureTransforms(1, symbols, null, cartogramScales, 'geo', 'cartogram', 1);
+    const ft = result[0];
+    expect(ft.ax).toBe(2);
+    expect(ft.bx).toBeCloseTo(100 * (1 - 2) + 15);
+    expect(ft.ay).toBe(2);
+    expect(ft.by).toBeCloseTo(200 * (1 - 2) + (-10));
+  });
+
   it('interpolates between geo and dorling', () => {
     const symbols = [{ featureIndex: 0, x: 10, y: 20, radius: 5 }];
     const dorlingMap = new Map([[0, { x: 30, y: 50 }]]);
@@ -509,7 +577,7 @@ describe('computeSymbolPositions', () => {
       { featureIndex: 0, x: 10, y: 20, radius: 5 },
       { featureIndex: 1, x: 30, y: 40, radius: 8 },
     ];
-    const result = computeSymbolPositions(symbols, null, 'geo', 'geo', 1);
+    const result = computeSymbolPositions(symbols, null, null, 'geo', 'geo', 1);
     expect(result[0]).toEqual({ x: 10, y: 20 });
     expect(result[1]).toEqual({ x: 30, y: 40 });
   });
@@ -517,16 +585,24 @@ describe('computeSymbolPositions', () => {
   it('returns dorling positions at t=1 for geo→dorling', () => {
     const symbols = [{ featureIndex: 0, x: 10, y: 20, radius: 5 }];
     const dorlingMap = new Map([[0, { x: 50, y: 60 }]]);
-    const result = computeSymbolPositions(symbols, dorlingMap, 'geo', 'dorling', 1);
+    const result = computeSymbolPositions(symbols, dorlingMap, null, 'geo', 'dorling', 1);
     expect(result[0]).toEqual({ x: 50, y: 60 });
   });
 
   it('interpolates positions at t=0.5', () => {
     const symbols = [{ featureIndex: 0, x: 10, y: 20, radius: 5 }];
     const dorlingMap = new Map([[0, { x: 30, y: 40 }]]);
-    const result = computeSymbolPositions(symbols, dorlingMap, 'geo', 'dorling', 0.5);
+    const result = computeSymbolPositions(symbols, dorlingMap, null, 'geo', 'dorling', 0.5);
     expect(result[0].x).toBeCloseTo(20);
     expect(result[0].y).toBeCloseTo(30);
+  });
+
+  it('returns nudged positions for cartogram at t=1', () => {
+    const symbols = [{ featureIndex: 0, x: 100, y: 200, radius: 5 }];
+    const cartogramScales = [{ scale: 2, cx: 100, cy: 200, dx: 15, dy: -10 }];
+    const result = computeSymbolPositions(symbols, null, cartogramScales, 'geo', 'cartogram', 1);
+    expect(result[0].x).toBeCloseTo(115);
+    expect(result[0].y).toBeCloseTo(190);
   });
 });
 

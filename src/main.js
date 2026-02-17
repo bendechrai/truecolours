@@ -13,7 +13,7 @@ import {
   colourBubbles, renderBubbles,
   renderAlpha,
   computeDorling,
-  computeCartogramScales, renderCartogramOutlines,
+  computeCartogramScales, computeCartogramNudge, renderCartogramOutlines,
   computeFeatureTransforms, computeSymbolPositions,
   renderBorders, buildHitTestCanvas,
 } from './dots.js';
@@ -179,6 +179,7 @@ async function switchCountry(id) {
       state.dorlingSymbolMap.set(ds.featureIndex, { x: ds.x, y: ds.y });
     }
     state.cartogramScales = computeCartogramScales(state.geoData.features, state.geoData.projection, state.electionData, config.elections);
+    state.cartogramScales = computeCartogramNudge(state.cartogramScales, state.geoData.features, state.geoData.projection);
     // Snap to current shape (no animation on country switch)
     state.morphFrom = state.shape;
     state.morphTo = state.shape;
@@ -249,7 +250,7 @@ function colourAndRender() {
     easeInOutCubic(state.morphT),
   ) : null;
   const positions = !isGeoStatic ? computeSymbolPositions(
-    state.symbols, state.dorlingSymbolMap,
+    state.symbols, state.dorlingSymbolMap, state.cartogramScales,
     state.morphFrom, state.morphTo,
     easeInOutCubic(state.morphT),
   ) : null;

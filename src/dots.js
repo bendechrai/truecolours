@@ -201,7 +201,9 @@ export function renderChoropleth(ctx, features, projection, electionData, partie
     if (useCartogram) {
       const cs = cartogramScales[i];
       const s = 1 + (cs.scale - 1) * morphT;
-      ctx.translate(cs.cx, cs.cy);
+      const ndx = (cs.dx || 0) * morphT;
+      const ndy = (cs.dy || 0) * morphT;
+      ctx.translate(cs.cx + ndx, cs.cy + ndy);
       ctx.scale(s, s);
       ctx.translate(-cs.cx, -cs.cy);
     }
@@ -492,7 +494,9 @@ export function renderAlpha(ctx, features, projection, electionData, parties, ye
     if (useCartogram) {
       const cs = cartogramScales[i];
       const s = 1 + (cs.scale - 1) * morphT;
-      ctx.translate(cs.cx, cs.cy);
+      const ndx = (cs.dx || 0) * morphT;
+      const ndy = (cs.dy || 0) * morphT;
+      ctx.translate(cs.cx + ndx, cs.cy + ndy);
       ctx.scale(s, s);
       ctx.translate(-cs.cx, -cs.cy);
     }
@@ -581,9 +585,11 @@ export function renderCartogramOutlines(ctx, features, projection, cartogramScal
   for (const i of indices) {
     const cs = cartogramScales[i];
     const s = 1 + (cs.scale - 1) * morphT;
+    const ndx = (cs.dx || 0) * morphT;
+    const ndy = (cs.dy || 0) * morphT;
 
     ctx.save();
-    ctx.translate(cs.cx, cs.cy);
+    ctx.translate(cs.cx + ndx, cs.cy + ndy);
     ctx.scale(s, s);
     ctx.translate(-cs.cx, -cs.cy);
 
@@ -602,6 +608,55 @@ export function renderCartogramOutlines(ctx, features, projection, cartogramScal
   }
 
   ctx.restore();
+}
+
+// ─── Cartogram Nudge (collision avoidance) ───────────────────────
+// After computing non-contiguous cartogram scales, features that scale up
+// can overlap neighbours.  This runs a D3 force simulation to push them
+// apart, producing per-feature nudge offsets (dx, dy) applied after scaling.
+
+export function computeCartogramNudge(cartogramScales, features, projection) {
+  const pathGen = d3.geoPath(projection);
+
+  const nodes = [];
+  for (let i = 0; i < features.length; i++) {
+    const cs = cartogramScales[i];
+    if (cs.scale === 0) continue;
+
+    const geoArea = pathGen.area(features[i]);
+    if (geoArea <= 0) continue;
+
+    const equivalentRadius = Math.sqrt(geoArea * cs.scale * cs.scale / Math.PI);
+
+    nodes.push({
+      featureIndex: i,
+      x: cs.cx,
+      y: cs.cy,
+      origX: cs.cx,
+      origY: cs.cy,
+      radius: equivalentRadius,
+    });
+  }
+
+  if (!nodes.length) {
+    return cartogramScales.map(cs => ({ ...cs, dx: 0, dy: 0 }));
+  }
+
+  const sim = d3.forceSimulation(nodes)
+    .force('x', d3.forceX(d => d.origX).strength(0.05))
+    .force('y', d3.forceY(d => d.origY).strength(0.05))
+    .force('collide', d3.forceCollide(d => d.radius + 0.5).iterations(4))
+    .stop();
+
+  for (let i = 0; i < 300; i++) sim.tick();
+
+  const result = cartogramScales.map(cs => ({ ...cs, dx: 0, dy: 0 }));
+  for (const node of nodes) {
+    result[node.featureIndex].dx = node.x - node.origX;
+    result[node.featureIndex].dy = node.y - node.origY;
+  }
+
+  return result;
 }
 
 // ─── Dorling Cartogram ───────────────────────────────────────────
@@ -634,9 +689,9 @@ function getAffine(fi, shape, geoCentroids, dorlingSymbolMap, cartogramScales) {
     if (!cs || cs.scale === 0) return IDENTITY_AFFINE;
     return {
       ax: cs.scale,
-      bx: cs.cx * (1 - cs.scale),
+      bx: cs.cx * (1 - cs.scale) + (cs.dx || 0),
       ay: cs.scale,
-      by: cs.cy * (1 - cs.scale),
+      by: cs.cy * (1 - cs.scale) + (cs.dy || 0),
     };
   }
   if (shape === 'dorling' && dorlingSymbolMap) {
@@ -676,11 +731,11 @@ export function computeFeatureTransforms(featureCount, symbols, dorlingSymbolMap
 /**
  * Interpolated positions for symbol-based renderers (pies, bubbles).
  */
-export function computeSymbolPositions(symbols, dorlingSymbolMap, fromShape, toShape, t) {
+export function computeSymbolPositions(symbols, dorlingSymbolMap, cartogramScales, fromShape, toShape, t) {
   return symbols.map(sym => {
     const fi = sym.featureIndex;
-    const from = getSymbolPos(sym, fi, dorlingSymbolMap, fromShape);
-    const to = getSymbolPos(sym, fi, dorlingSymbolMap, toShape);
+    const from = getSymbolPos(sym, fi, dorlingSymbolMap, cartogramScales, fromShape);
+    const to = getSymbolPos(sym, fi, dorlingSymbolMap, cartogramScales, toShape);
     return {
       x: from.x + (to.x - from.x) * t,
       y: from.y + (to.y - from.y) * t,
@@ -688,12 +743,18 @@ export function computeSymbolPositions(symbols, dorlingSymbolMap, fromShape, toS
   });
 }
 
-function getSymbolPos(sym, fi, dorlingSymbolMap, shape) {
+function getSymbolPos(sym, fi, dorlingSymbolMap, cartogramScales, shape) {
   if (shape === 'dorling' && dorlingSymbolMap) {
     const ds = dorlingSymbolMap.get(fi);
     if (ds) return ds;
   }
-  return sym; // geo and cartogram both use the geo centroid
+  if (shape === 'cartogram' && cartogramScales) {
+    const cs = cartogramScales[fi];
+    if (cs && (cs.dx || cs.dy)) {
+      return { x: sym.x + (cs.dx || 0), y: sym.y + (cs.dy || 0) };
+    }
+  }
+  return sym; // geo uses the geo centroid
 }
 
 // ─── Borders ─────────────────────────────────────────────────────

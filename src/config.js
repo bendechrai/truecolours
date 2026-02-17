@@ -177,6 +177,6 @@ export const SHAPE_INFO = {
   },
   cartogram: {
     label: 'Cartogram',
-    detail: 'Each region is scaled so its visual area is proportional to its eligible voters.',
+    detail: 'Each region is scaled so its visual area is proportional to its eligible voters. Regions are nudged apart to prevent overlap.',
   },
 };
