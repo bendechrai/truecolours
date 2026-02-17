@@ -578,7 +578,7 @@ export function renderCartogramOutlines(ctx, features, projection, cartogramScal
   // Symbol-based modes (pies, bubbles) carry all the information in the
   // symbols themselves.  Filling regions with beige washes out the symbols,
   // so only draw thin outlines for geographic context.
-  const outlineOnly = vizMode === 'pies' || vizMode === 'bubbles';
+  const outlineOnly = vizMode === 'pies' || vizMode === 'bubbles' || vizMode === 'dots';
 
   const pathGen = d3.geoPath(projection, ctx);
   ctx.save();
