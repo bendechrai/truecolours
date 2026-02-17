@@ -110,6 +110,10 @@ export function buildUI(container) {
 
   container.appendChild(mapCard);
 
+  // Ranking panel (expandable, just below the map)
+  const rankingPanel = buildRankingPanel();
+  container.appendChild(rankingPanel);
+
   // Loading overlay (inside map container)
   const loadingOverlay = el('div', { className: 'loading-overlay hidden' }, [
     el('div', { className: 'loading-spinner' }),
@@ -171,6 +175,7 @@ export function buildUI(container) {
     yearLabels,
     loadingOverlay,
     tooltip,
+    rankingPanel,
     isEmbed,
   };
 }
@@ -312,6 +317,51 @@ export function createAutoplay(playBtn, getElections, getCurrentIndex, goToIndex
   }
 
   return { toggle, start, stop, isPlaying: () => !!interval };
+}
+
+/**
+ * Build the expandable ranking panel that lists every visualisation
+ * permutation from most to least accurate.  Each row is clickable.
+ */
+function buildRankingPanel() {
+  const details = el('details', { className: 'ranking-panel' });
+  const summary = el('summary', { className: 'ranking-summary' }, [
+    'Visualisation accuracy ranking',
+  ]);
+  details.appendChild(summary);
+
+  // Sort MODE_INFO entries by rank
+  const sorted = Object.entries(MODE_INFO)
+    .filter(([, v]) => v.rank != null)
+    .sort(([, a], [, b]) => a.rank - b.rank);
+
+  const list = el('ol', { className: 'ranking-list' });
+  for (const [key, info] of sorted) {
+    const accuracyClass = info.accuracy === 'High' ? 'high'
+      : info.accuracy === 'Moderate' ? 'moderate' : 'low';
+
+    const li = el('li', {
+      className: 'ranking-item',
+      'data-combo': key,
+    }, [
+      el('span', { className: 'ranking-title' }, [info.title]),
+      el('span', { className: `ranking-badge ${accuracyClass}` }, [info.accuracy]),
+      el('span', { className: 'ranking-detail' }, [info.accuracyDetail]),
+    ]);
+    list.appendChild(li);
+  }
+  details.appendChild(list);
+  return details;
+}
+
+/**
+ * Highlight the active permutation in the ranking panel.
+ */
+export function updateRankingHighlight(panelEl, vizMode, shape) {
+  const key = `${vizMode}:${shape}`;
+  for (const item of panelEl.querySelectorAll('.ranking-item')) {
+    item.classList.toggle('active', item.dataset.combo === key);
+  }
 }
 
 /**

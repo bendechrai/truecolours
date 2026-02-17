@@ -128,6 +128,8 @@ export const SHAPE_COMPAT = {
 // ─── Mode descriptions (shown above the map) ─────────────────────
 // Keyed by "vizMode:shape" so every valid combination gets a tailored
 // title, description, and accuracy rating.
+//
+// `rank` orders from most accurate (1) to most misleading (14).
 
 export const MODE_INFO = {
   // ── Choropleth ──────────────────────────────────────────────────
@@ -137,6 +139,7 @@ export const MODE_INFO = {
     insight: 'This is the map most often shared on social media. Large rural areas dominate visually, even when they contain fewer voters.',
     accuracy: 'Misleading',
     accuracyDetail: 'A 51\u201349 win looks identical to 80\u201320. Geographic area has no relationship to population.',
+    rank: 14,
   },
   'choropleth:cartogram': {
     title: 'Choropleth \u00b7 Cartogram',
@@ -144,6 +147,7 @@ export const MODE_INFO = {
     insight: 'Removes geographic distortion: big, empty regions shrink while dense urban areas grow to reflect their true electoral weight.',
     accuracy: 'Moderate',
     accuracyDetail: 'Area now reflects population, but winner-take-all colouring still hides vote margins.',
+    rank: 12,
   },
 
   // ── Dot Density ─────────────────────────────────────────────────
@@ -151,8 +155,9 @@ export const MODE_INFO = {
     title: 'Dot Density',
     purpose: 'Each dot represents a fixed number of voters, coloured by the party they voted for, placed within geographic boundaries.',
     insight: 'Dense urban areas show as tight clusters of mixed colour. Sparse rural areas get proportionally fewer dots.',
-    accuracy: 'High',
-    accuracyDetail: 'Every vote gets equal visual weight regardless of geography.',
+    accuracy: 'Moderate',
+    accuracyDetail: 'Every vote gets equal visual weight, but geographic layout still gives disproportionate space to sparse rural areas.',
+    rank: 9,
   },
   'dots:dorling': {
     title: 'Dot Density \u00b7 Dorling',
@@ -160,6 +165,7 @@ export const MODE_INFO = {
     insight: 'Every region is visible at a proportional size, making it easy to compare dot patterns across regions.',
     accuracy: 'High',
     accuracyDetail: 'Every vote gets equal visual weight, and no region is hidden by overlap.',
+    rank: 5,
   },
   'dots:cartogram': {
     title: 'Dot Density \u00b7 Cartogram',
@@ -167,6 +173,7 @@ export const MODE_INFO = {
     insight: 'Urban areas expand to show their full detail; rural areas shrink to reflect fewer voters.',
     accuracy: 'High',
     accuracyDetail: 'Every vote gets equal visual weight within regions that reflect their true electoral significance.',
+    rank: 6,
   },
 
   // ── Pie Charts ──────────────────────────────────────────────────
@@ -174,8 +181,9 @@ export const MODE_INFO = {
     title: 'Pie Charts',
     purpose: 'Each region gets a pie chart sized by eligible voters with slices showing vote share, at its geographic position.',
     insight: 'Compare both total electorate size and party breakdown at a glance, though small regions may overlap with large neighbours.',
-    accuracy: 'High',
-    accuracyDetail: 'Circle area is proportional to eligible voters; slices show exact vote share.',
+    accuracy: 'Moderate',
+    accuracyDetail: 'Circle area and slices are accurate, but geographic overlap hides small high-population regions behind large neighbours.',
+    rank: 7,
   },
   'pies:dorling': {
     title: 'Pie Charts \u00b7 Dorling',
@@ -183,6 +191,7 @@ export const MODE_INFO = {
     insight: 'Easy to compare both total electorate size and vote breakdown across all regions simultaneously.',
     accuracy: 'High',
     accuracyDetail: 'Circle area is proportional to eligible voters; slices show exact vote share; no overlap.',
+    rank: 1,
   },
   'pies:cartogram': {
     title: 'Pie Charts \u00b7 Cartogram',
@@ -190,6 +199,7 @@ export const MODE_INFO = {
     insight: 'Region area and pie size both reflect electoral weight, reinforcing the population signal.',
     accuracy: 'High',
     accuracyDetail: 'Both region area and symbol size are proportional to eligible voters; slices show exact vote share.',
+    rank: 2,
   },
 
   // ── Party Circles ───────────────────────────────────────────────
@@ -197,8 +207,9 @@ export const MODE_INFO = {
     title: 'Party Circles',
     purpose: 'Concentric circles sized by each party\u2019s vote count, placed at each region\u2019s geographic position.',
     insight: 'Makes it easy to see which party dominates each region and by how much, though small regions may be hidden.',
-    accuracy: 'High',
-    accuracyDetail: 'Each circle\u2019s area is proportional to that party\u2019s vote count.',
+    accuracy: 'Moderate',
+    accuracyDetail: 'Each circle\u2019s area is accurate, but geographic overlap hides densely packed urban regions.',
+    rank: 8,
   },
   'bubbles:dorling': {
     title: 'Party Circles \u00b7 Dorling',
@@ -206,6 +217,7 @@ export const MODE_INFO = {
     insight: 'Clear comparison of party dominance across all regions without geographic overlap hiding small areas.',
     accuracy: 'High',
     accuracyDetail: 'Each circle\u2019s area is proportional to that party\u2019s votes; no overlap between regions.',
+    rank: 3,
   },
   'bubbles:cartogram': {
     title: 'Party Circles \u00b7 Cartogram',
@@ -213,6 +225,7 @@ export const MODE_INFO = {
     insight: 'Region area reinforces the population signal alongside per-party circle sizing.',
     accuracy: 'High',
     accuracyDetail: 'Each circle\u2019s area is proportional to that party\u2019s votes within population-proportional regions.',
+    rank: 4,
   },
 
   // ── Shaded (Value-by-Alpha) ─────────────────────────────────────
@@ -222,6 +235,7 @@ export const MODE_INFO = {
     insight: 'Low-density areas fade toward transparent, so visual weight tracks population rather than land area.',
     accuracy: 'Moderate',
     accuracyDetail: 'Winner-take-all colouring remains, but density weighting reduces geographic distortion.',
+    rank: 11,
   },
   'alpha:cartogram': {
     title: 'Shaded \u00b7 Cartogram',
@@ -229,5 +243,6 @@ export const MODE_INFO = {
     insight: 'Combines two population corrections: area scaling and alpha fading. Geographic distortion is significantly reduced.',
     accuracy: 'Moderate',
     accuracyDetail: 'Winner-take-all colouring still hides margins, but both area and opacity corrections reduce distortion.',
+    rank: 10,
   },
 };

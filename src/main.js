@@ -23,6 +23,7 @@ import {
   updateLegend,
   updateYearLabels,
   updateModeDescription,
+  updateRankingHighlight,
   showTooltip,
   hideTooltip,
   createAutoplay,
@@ -82,6 +83,15 @@ function init() {
   }
   setActiveShapeButton(state.shape);
   updateShapeButtonStates();
+
+  // Wire ranking panel clicks
+  ui.rankingPanel.addEventListener('click', (e) => {
+    const item = e.target.closest('.ranking-item');
+    if (!item) return;
+    const [vizMode, shape] = item.dataset.combo.split(':');
+    setVizMode(vizMode);
+    if (shape !== state.shape) setShape(shape);
+  });
 
   // Wire timeline controls
   ui.prevBtn.addEventListener('click', () => stepYear(-1));
@@ -220,6 +230,7 @@ async function switchCountry(id) {
     updateLegendUI();
     updateTimelineUI();
     updateModeDescription(ui.modeDescription, state.vizMode, state.shape);
+    updateRankingHighlight(ui.rankingPanel, state.vizMode, state.shape);
     updateShapeButtonStates();
 
     hideLoading();

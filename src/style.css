@@ -320,6 +320,104 @@ body {
   margin-top: 0.4rem;
 }
 
+/* Ranking panel */
+.ranking-panel {
+  background: var(--card-bg);
+  border: 1px solid var(--card-border);
+  border-radius: var(--radius);
+  margin-bottom: 1rem;
+  font-size: 0.85rem;
+}
+
+.ranking-summary {
+  padding: 0.75rem 1.25rem;
+  cursor: pointer;
+  font-family: var(--font-display);
+  font-size: 1rem;
+  user-select: none;
+  list-style: none;
+}
+
+.ranking-summary::before {
+  content: '\25B8 ';
+}
+
+.ranking-panel[open] > .ranking-summary::before {
+  content: '\25BE ';
+}
+
+.ranking-list {
+  list-style: none;
+  padding: 0 1.25rem 0.75rem;
+  margin: 0;
+  counter-reset: rank;
+}
+
+.ranking-item {
+  display: grid;
+  grid-template-columns: 1.5rem 1fr auto;
+  grid-template-rows: auto auto;
+  column-gap: 0.5rem;
+  padding: 0.5rem 0.5rem;
+  border-radius: 6px;
+  cursor: pointer;
+  counter-increment: rank;
+  transition: background 0.15s;
+}
+
+.ranking-item:hover {
+  background: rgba(0, 0, 0, 0.04);
+}
+
+.ranking-item.active {
+  background: rgba(59, 130, 246, 0.08);
+}
+
+.ranking-item::before {
+  content: counter(rank) '.';
+  grid-row: 1 / -1;
+  align-self: center;
+  font-weight: 600;
+  color: var(--text-muted);
+  font-size: 0.8rem;
+}
+
+.ranking-title {
+  font-weight: 600;
+}
+
+.ranking-badge {
+  font-size: 0.72rem;
+  font-weight: 600;
+  padding: 0.1rem 0.45rem;
+  border-radius: 4px;
+  align-self: center;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.ranking-badge.high {
+  color: #2e7d32;
+  background: rgba(46, 125, 50, 0.1);
+}
+
+.ranking-badge.moderate {
+  color: #f57f17;
+  background: rgba(245, 127, 23, 0.1);
+}
+
+.ranking-badge.low {
+  color: #c62828;
+  background: rgba(198, 40, 40, 0.1);
+}
+
+.ranking-detail {
+  grid-column: 2 / -1;
+  color: var(--text-muted);
+  font-size: 0.78rem;
+  line-height: 1.4;
+}
+
 /* Timeline */
 .timeline {
   text-align: center;
@@ -706,6 +804,23 @@ body {
 
   .mode-desc-header {
     font-size: 1.1rem;
+  }
+
+  .ranking-panel {
+    font-size: 0.8rem;
+  }
+
+  .ranking-summary {
+    font-size: 0.9rem;
+    padding: 0.6rem 1rem;
+  }
+
+  .ranking-list {
+    padding: 0 0.75rem 0.6rem;
+  }
+
+  .ranking-item {
+    padding: 0.4rem 0.35rem;
   }
 
   .tooltip {
