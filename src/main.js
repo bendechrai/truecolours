@@ -155,6 +155,7 @@ async function switchCountry(id) {
   try {
     // Set up canvases
     const { width, height } = setupCanvases(config.aspectRatio);
+    lastContainerWidth = width;
 
     // Load geo data (step 1 of 4)
     if (config.boundaryType === 'counties') {
@@ -588,9 +589,15 @@ function handleTouch(e) {
 }
 
 // ─── Resize ────────────────────────────────────────────────────────
+let lastContainerWidth = 0;
 function onResize() {
   if (state.loading || !state.geoData) return;
-  // Full re-render on resize
+  // Only re-render when width actually changes.  Mobile browsers fire
+  // resize when the address bar hides/shows on scroll (height-only change);
+  // since we derive height from width + aspect ratio, ignore those.
+  const w = ui.mapContainer.clientWidth;
+  if (w === lastContainerWidth) return;
+  lastContainerWidth = w;
   switchCountry(state.country);
 }
 
