@@ -437,7 +437,7 @@ function updateBorderCanvas() {
   if (cmt > 0 && !isPathMode) {
     // Non-path modes with cartogram active: show scaled outlines
     renderCartogramOutlines(borderCtx, state.geoData.features, state.geoData.projection,
-      state.cartogramScales, cmt, dpr, state.vizMode);
+      state.cartogramScales, cmt, dpr);
   } else if (atGeo) {
     // Fully at geo: show normal borders
     renderBorders(borderCtx, state.geoData, state.geoData.projection, dpr);
