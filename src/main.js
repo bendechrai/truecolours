@@ -13,7 +13,7 @@ import {
   colourBubbles, renderBubbles,
   renderAlpha,
   computeDorling,
-  computeCartogramScales, computeCartogramNudge, computeCartogramBounds,
+  computeCartogramScales, computeCartogramNudge,
   renderCartogramOutlines,
   computeFeatureTransforms, computeSymbolPositions,
   renderBorders, buildHitTestCanvas,
@@ -55,6 +55,7 @@ const state = {
 let ui;
 let autoplay;
 let dpr = window.devicePixelRatio || 1;
+let canvasOffset = { x: 0, y: 0 };
 
 // ─── Init ──────────────────────────────────────────────────────────
 function init() {
@@ -173,42 +174,15 @@ async function switchCountry(id) {
     updateLoadingProgress('Placing dots... 50%');
     await new Promise((r) => requestAnimationFrame(r));
 
-    // Compute cartogram scales first (expensive pixel-area measurement, run once).
-    // Scale ratios are invariant to projection changes (k² cancels), so we
-    // only need to update centroids cheaply if the projection is refitted.
-    state.cartogramScales = computeCartogramScales(state.geoData.features, state.geoData.projection, state.electionData, config.elections);
+    // Refit the projection so the map renders in the centre of the 3×
+    // canvas.  The 1× buffer on every side prevents cartogram expansion
+    // from clipping at the canvas pixel boundary.
+    state.geoData.projection.fitExtent(
+      [[width, height], [2 * width, 2 * height]],
+      state.geoData.fitCollection,
+    );
 
-    // Check if the scaled cartogram would overflow the canvas (no nudge yet,
-    // so add a safety margin to account for collision-avoidance displacement).
-    const cb = computeCartogramBounds(state.geoData.features, state.geoData.projection, state.cartogramScales);
-    const NUDGE_MARGIN = 20; // generous px budget for force-sim displacement
-    if (cb.minX < NUDGE_MARGIN || cb.minY < NUDGE_MARGIN ||
-        cb.maxX > width - NUDGE_MARGIN || cb.maxY > height - NUDGE_MARGIN) {
-      const padL = Math.max(0, NUDGE_MARGIN - cb.minX);
-      const padR = Math.max(0, cb.maxX - (width - NUDGE_MARGIN));
-      const padT = Math.max(0, NUDGE_MARGIN - cb.minY);
-      const padB = Math.max(0, cb.maxY - (height - NUDGE_MARGIN));
-      const padX = Math.max(padL, padR);
-      const padY = Math.max(padT, padB);
-      const pad = Math.max(padX, padY);
-
-      state.geoData.projection.fitExtent(
-        [[pad, pad], [width - pad, height - pad]],
-        state.geoData.fitCollection,
-      );
-
-      // Update centroids only (cheap); scale ratios are unchanged.
-      const pathGen = d3.geoPath(state.geoData.projection);
-      for (let i = 0; i < state.geoData.features.length; i++) {
-        const c = pathGen.centroid(state.geoData.features[i]);
-        if (c && isFinite(c[0])) {
-          state.cartogramScales[i].cx = c[0];
-          state.cartogramScales[i].cy = c[1];
-        }
-      }
-    }
-
-    // Now run nudge, symbols, and Dorling once on the final projection.
+    // Compute cartogram, symbols, and Dorling on the final projection.
     state.cartogramScales = computeCartogramNudge(state.cartogramScales, state.geoData.features, state.geoData.projection);
     state.symbols = computeSymbols(state.geoData.features, state.geoData.projection, width, height, state.electionData, config.elections);
     state.dorlingSymbols = computeDorling(state.symbols);
@@ -230,8 +204,8 @@ async function switchCountry(id) {
     state.hitTest = buildHitTestCanvas(
       state.geoData.features,
       state.geoData.projection,
-      width,
-      height,
+      width * 3,
+      height * 3,
       dpr,
     );
 
@@ -475,11 +449,19 @@ function setupCanvases(aspectRatio) {
 
   ui.mapContainer.style.height = `${height}px`;
 
+  // 3x canvas provides 1× buffer on every side so cartogram expansion
+  // never clips at the canvas pixel boundary.
+  canvasOffset = { x: width, y: height };
+  const cw = width * 3;
+  const ch = height * 3;
+
   for (const canvas of [ui.dotCanvas, ui.borderCanvas, ui.interactionCanvas]) {
-    canvas.width = width * dpr;
-    canvas.height = height * dpr;
-    canvas.style.width = `${width}px`;
-    canvas.style.height = `${height}px`;
+    canvas.width = cw * dpr;
+    canvas.height = ch * dpr;
+    canvas.style.width = `${cw}px`;
+    canvas.style.height = `${ch}px`;
+    canvas.style.left = `${-width}px`;
+    canvas.style.top = `${-height}px`;
   }
 
   return { width, height };
@@ -554,8 +536,8 @@ function handleMouseMove(e) {
   const t = state.mapContainerSelection
     ? d3.zoomTransform(ui.mapContainer)
     : d3.zoomIdentity;
-  const x = (mx - t.x) / t.k;
-  const y = (my - t.y) / t.k;
+  const x = (mx - t.x) / t.k + canvasOffset.x;
+  const y = (my - t.y) / t.k + canvasOffset.y;
 
   const featureIndex = state.hitTest.getFeatureIndex(x, y);
   if (featureIndex < 0) {
