@@ -345,6 +345,7 @@ function setVizMode(modeId) {
   colourAndRender();
   updateBorderCanvas();
   updateModeDescription(ui.modeDescription, state.vizMode, state.shape);
+  updateRankingHighlight(ui.rankingPanel, state.vizMode, state.shape);
 }
 
 // ─── Shape switching (geo / dorling / cartogram) ────────────────
@@ -361,6 +362,7 @@ function setShape(newShape) {
   state.morphTo = newShape;
   setActiveShapeButton(newShape);
   updateModeDescription(ui.modeDescription, state.vizMode, state.shape);
+  updateRankingHighlight(ui.rankingPanel, state.vizMode, state.shape);
 
   animateShapeTransition();
 }
