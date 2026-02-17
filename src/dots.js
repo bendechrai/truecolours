@@ -17,6 +17,7 @@ const TWO_PI = Math.PI * 2;
 // Dot density: target total dot count across all features
 const TARGET_DOT_COUNT = 100000;
 const DOT_RADIUS = 0.8;
+const GOLDEN_ANGLE = Math.PI * (3 - Math.sqrt(5)); // ≈ 2.3999...
 
 // ─── Seeded PRNG (mulberry32) ───────────────────────────────────
 
@@ -268,32 +269,49 @@ export function generateDots(features, projection, electionData, parties, year, 
     // Seeded RNG per feature for deterministic placement
     const rng = mulberry32(i * 31337 + year);
 
-    const groups = [];
+    // Build colour list: one RGB entry per dot, proportional to votes
+    const colours = [];
     for (const party of parties) {
       const count = rd.votes[party.id] || 0;
-      if (count > 0) groups.push({ count, colour: party.colour });
+      const n = Math.round(count / votersPerDot);
+      if (n > 0) {
+        const rgb = hexToRgb(party.colour);
+        for (let d = 0; d < n; d++) colours.push(rgb);
+      }
     }
     if (showNonVoters) {
       const totalVotes = Object.values(rd.votes).reduce((a, b) => a + b, 0);
       const nv = rd.eligible - totalVotes;
-      if (nv > 0) groups.push({ count: nv, colour: '#CFCFCF' });
+      const n = Math.round(nv / votersPerDot);
+      if (n > 0) {
+        const rgb = hexToRgb('#CFCFCF');
+        for (let d = 0; d < n; d++) colours.push(rgb);
+      }
+    }
+    if (colours.length === 0) continue;
+
+    // Shuffle colours so parties are randomly interleaved
+    for (let ci = colours.length - 1; ci > 0; ci--) {
+      const cj = Math.floor(rng() * (ci + 1));
+      [colours[ci], colours[cj]] = [colours[cj], colours[ci]];
     }
 
-    for (const { count, colour } of groups) {
-      const numDots = Math.round(count / votersPerDot);
-      if (numDots === 0) continue;
-      const rgb = hexToRgb(colour);
-      for (let d = 0; d < numDots; d++) {
-        // Uniform distribution within a circle around the centroid
-        const angle = rng() * TWO_PI;
-        const r = jitter * Math.sqrt(rng());
-        dots.push({
-          x: centroid[0] + r * Math.cos(angle),
-          y: centroid[1] + r * Math.sin(angle),
-          r: rgb[0], g: rgb[1], b: rgb[2],
-          fi: i,
-        });
-      }
+    // Place dots on a Fermat spiral (golden-angle) for even spacing,
+    // with small random jitter to break the visual pattern.
+    const N = colours.length;
+    for (let d = 0; d < N; d++) {
+      const frac = (d + 0.5) / N;
+      const baseR = jitter * Math.sqrt(frac);
+      const baseA = d * GOLDEN_ANGLE;
+      const jr = baseR * 0.15 * (rng() * 2 - 1);
+      const ja = 0.3 * (rng() * 2 - 1);
+      const rgb = colours[d];
+      dots.push({
+        x: centroid[0] + (baseR + jr) * Math.cos(baseA + ja),
+        y: centroid[1] + (baseR + jr) * Math.sin(baseA + ja),
+        r: rgb[0], g: rgb[1], b: rgb[2],
+        fi: i,
+      });
     }
   }
 
