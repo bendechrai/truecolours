@@ -4,22 +4,16 @@ import * as d3 from 'd3';
 import * as topojson from 'topojson-client';
 import { TEST_CANVAS_SIZE } from './config.js';
 
-// Fraction of canvas reserved as padding on each side so cartogram
-// expansion doesn't clip against the canvas edge.
-const MAP_PADDING = 0.08;
-
 /**
  * Load US county boundaries (real TopoJSON from us-atlas).
- * Returns { features, stateFeatures, outline, stateBorders, projection }
+ * Returns { features, stateFeatures, outline, stateBorders, projection, fitCollection }
  */
 export async function loadUS(url, width, height) {
   const topo = await d3.json(url);
   const counties = topojson.feature(topo, topo.objects.counties);
   const states = topojson.feature(topo, topo.objects.states);
 
-  const pad = Math.min(width, height) * MAP_PADDING;
-  const projection = d3.geoAlbersUsa()
-    .fitExtent([[pad, pad], [width - pad, height - pad]], counties);
+  const projection = d3.geoAlbersUsa().fitSize([width, height], counties);
 
   return {
     features: counties.features,
@@ -27,12 +21,13 @@ export async function loadUS(url, width, height) {
     outline: topojson.mesh(topo, topo.objects.nation),
     stateBorders: topojson.mesh(topo, topo.objects.states, (a, b) => a !== b),
     projection,
+    fitCollection: counties,
   };
 }
 
 /**
  * Load real GeoJSON boundaries for UK, Australia, or Canada.
- * Returns { features, outline, regionBorders, projection }
+ * Returns { features, outline, regionBorders, projection, fitCollection }
  */
 export async function loadGeoJSONCountry(url, config, width, height) {
   const geojson = await d3.json(url);
@@ -111,22 +106,19 @@ export async function loadGeoJSONCountry(url, config, width, height) {
     }
   }
 
-  const pad = Math.min(width, height) * MAP_PADDING;
-  const extent = [[pad, pad], [width - pad, height - pad]];
-
   if (config.projection === 'conicEqualArea') {
     projection = d3.geoConicEqualArea()
       .rotate([96, 0])
       .parallels([50, 70])
-      .fitExtent(extent, fitCollection);
+      .fitSize([width, height], fitCollection);
   } else if (config.projection === 'conicConformal') {
     projection = d3.geoConicConformal()
       .rotate([96, 0])
       .parallels([49, 77])
-      .fitExtent(extent, fitCollection);
+      .fitSize([width, height], fitCollection);
   } else {
     // Default: Mercator fitted to features
-    projection = d3.geoMercator().fitExtent(extent, fitCollection);
+    projection = d3.geoMercator().fitSize([width, height], fitCollection);
   }
 
   // Build a merged outline from all features for border rendering
@@ -138,6 +130,7 @@ export async function loadGeoJSONCountry(url, config, width, height) {
     stateBorders: null,
     regionBorders: true,        // flag to draw individual feature borders
     projection,
+    fitCollection,
   };
 }
 

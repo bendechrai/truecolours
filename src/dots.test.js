@@ -56,6 +56,7 @@ import {
   computeDorling,
   computeCartogramScales,
   computeCartogramNudge,
+  computeCartogramBounds,
   computeFeatureTransforms,
   computeSymbolPositions,
 } from './dots.js';
@@ -467,6 +468,47 @@ describe('computeCartogramNudge', () => {
     const result = computeCartogramNudge(scales, features, mockProjection());
     expect(result[0].dx).toBe(0);
     expect(result[0].dy).toBe(0);
+  });
+});
+
+// ─── computeCartogramBounds ──────────────────────────────────────
+
+describe('computeCartogramBounds', () => {
+  it('returns bounds that expand beyond geo bounds for scale > 1', () => {
+    // Feature at [0,0]-[1,1] with centroid ~(0.5, 0.5), scale 2
+    const features = makeFeatures(1);
+    const scales = [{ scale: 2, cx: 0.5, cy: 0.5, dx: 0, dy: 0 }];
+    const bounds = computeCartogramBounds(features, mockProjection(), scales);
+    // Geo bounds are [0,0]-[1,1]. At scale 2 around (0.5, 0.5):
+    // new min = 2*(0 - 0.5) + 0.5 = -0.5
+    // new max = 2*(1 - 0.5) + 0.5 = 1.5
+    expect(bounds.minX).toBeCloseTo(-0.5);
+    expect(bounds.minY).toBeCloseTo(-0.5);
+    expect(bounds.maxX).toBeCloseTo(1.5);
+    expect(bounds.maxY).toBeCloseTo(1.5);
+  });
+
+  it('includes nudge offsets in bounds', () => {
+    const features = makeFeatures(1);
+    const scales = [{ scale: 1, cx: 0.5, cy: 0.5, dx: 10, dy: -5 }];
+    const bounds = computeCartogramBounds(features, mockProjection(), scales);
+    // At scale 1 with nudge (10, -5), bounds shift by that amount
+    expect(bounds.minX).toBeCloseTo(10);
+    expect(bounds.minY).toBeCloseTo(-5);
+    expect(bounds.maxX).toBeCloseTo(11);
+    expect(bounds.maxY).toBeCloseTo(-4);
+  });
+
+  it('skips features with scale=0', () => {
+    const features = makeFeatures(2);
+    const scales = [
+      { scale: 0, cx: 0.5, cy: 0.5, dx: 0, dy: 0 },
+      { scale: 1, cx: 1.5, cy: 0.5, dx: 0, dy: 0 },
+    ];
+    const bounds = computeCartogramBounds(features, mockProjection(), scales);
+    // Only feature 1 contributes: geo bounds [1,0]-[2,1]
+    expect(bounds.minX).toBeCloseTo(1);
+    expect(bounds.maxX).toBeCloseTo(2);
   });
 });
 

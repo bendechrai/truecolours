@@ -13,7 +13,8 @@ import {
   colourBubbles, renderBubbles,
   renderAlpha,
   computeDorling,
-  computeCartogramScales, computeCartogramNudge, renderCartogramOutlines,
+  computeCartogramScales, computeCartogramNudge, computeCartogramBounds,
+  renderCartogramOutlines,
   computeFeatureTransforms, computeSymbolPositions,
   renderBorders, buildHitTestCanvas,
 } from './dots.js';
@@ -180,6 +181,36 @@ async function switchCountry(id) {
     }
     state.cartogramScales = computeCartogramScales(state.geoData.features, state.geoData.projection, state.electionData, config.elections);
     state.cartogramScales = computeCartogramNudge(state.cartogramScales, state.geoData.features, state.geoData.projection);
+
+    // Refit projection so the expanded cartogram fits within the canvas.
+    // The geographic map gets natural margins; the cartogram fills the space.
+    const cb = computeCartogramBounds(state.geoData.features, state.geoData.projection, state.cartogramScales);
+    if (cb.minX < 0 || cb.minY < 0 || cb.maxX > width || cb.maxY > height) {
+      const padL = Math.max(0, -cb.minX);
+      const padR = Math.max(0, cb.maxX - width);
+      const padT = Math.max(0, -cb.minY);
+      const padB = Math.max(0, cb.maxY - height);
+      // Symmetric padding (use the worst-case side) + 10% safety margin
+      const padX = Math.max(padL, padR) * 1.1;
+      const padY = Math.max(padT, padB) * 1.1;
+      const pad = Math.max(padX, padY);
+
+      state.geoData.projection.fitExtent(
+        [[pad, pad], [width - pad, height - pad]],
+        state.geoData.fitCollection,
+      );
+
+      // Second pass: recompute everything that depends on the projection
+      state.symbols = computeSymbols(state.geoData.features, state.geoData.projection, width, height, state.electionData, config.elections);
+      state.dorlingSymbols = computeDorling(state.symbols);
+      state.dorlingSymbolMap = new Map();
+      for (const ds of state.dorlingSymbols) {
+        state.dorlingSymbolMap.set(ds.featureIndex, { x: ds.x, y: ds.y });
+      }
+      state.cartogramScales = computeCartogramScales(state.geoData.features, state.geoData.projection, state.electionData, config.elections);
+      state.cartogramScales = computeCartogramNudge(state.cartogramScales, state.geoData.features, state.geoData.projection);
+    }
+
     // Snap to current shape (no animation on country switch)
     state.morphFrom = state.shape;
     state.morphTo = state.shape;

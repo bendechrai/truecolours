@@ -610,6 +610,42 @@ export function renderCartogramOutlines(ctx, features, projection, cartogramScal
   ctx.restore();
 }
 
+// ─── Cartogram Bounds ────────────────────────────────────────────
+// Compute the bounding box of all features in their fully-expanded
+// cartogram state (scale + nudge).  Used to refit the projection so the
+// geographic map leaves enough room for the cartogram.
+
+export function computeCartogramBounds(features, projection, cartogramScales) {
+  const pathGen = d3.geoPath(projection);
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+
+  for (let i = 0; i < features.length; i++) {
+    const cs = cartogramScales[i];
+    if (cs.scale === 0) continue;
+
+    const bounds = pathGen.bounds(features[i]);
+    if (!bounds || !isFinite(bounds[0][0])) continue;
+
+    const s = cs.scale;
+    const dx = cs.dx || 0;
+    const dy = cs.dy || 0;
+
+    // Transform the four bounding-box corners through the cartogram affine
+    const x0 = bounds[0][0], y0 = bounds[0][1];
+    const x1 = bounds[1][0], y1 = bounds[1][1];
+    for (const [x, y] of [[x0, y0], [x1, y0], [x0, y1], [x1, y1]]) {
+      const nx = s * (x - cs.cx) + cs.cx + dx;
+      const ny = s * (y - cs.cy) + cs.cy + dy;
+      if (nx < minX) minX = nx;
+      if (ny < minY) minY = ny;
+      if (nx > maxX) maxX = nx;
+      if (ny > maxY) maxY = ny;
+    }
+  }
+
+  return { minX, minY, maxX, maxY };
+}
+
 // ─── Cartogram Nudge (collision avoidance) ───────────────────────
 // After computing non-contiguous cartogram scales, features that scale up
 // can overlap neighbours.  This runs a D3 force simulation to push them
