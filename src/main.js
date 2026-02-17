@@ -172,27 +172,23 @@ async function switchCountry(id) {
     updateLoadingProgress('Placing dots... 50%');
     await new Promise((r) => requestAnimationFrame(r));
 
-    // Compute proportional symbols (step 3 of 4)
-    state.symbols = computeSymbols(state.geoData.features, state.geoData.projection, width, height, state.electionData, config.elections);
-    state.dorlingSymbols = computeDorling(state.symbols);
-    state.dorlingSymbolMap = new Map();
-    for (const ds of state.dorlingSymbols) {
-      state.dorlingSymbolMap.set(ds.featureIndex, { x: ds.x, y: ds.y });
-    }
+    // Compute cartogram scales first (expensive pixel-area measurement, run once).
+    // Scale ratios are invariant to projection changes (k² cancels), so we
+    // only need to update centroids cheaply if the projection is refitted.
     state.cartogramScales = computeCartogramScales(state.geoData.features, state.geoData.projection, state.electionData, config.elections);
-    state.cartogramScales = computeCartogramNudge(state.cartogramScales, state.geoData.features, state.geoData.projection);
 
-    // Refit projection so the expanded cartogram fits within the canvas.
-    // The geographic map gets natural margins; the cartogram fills the space.
+    // Check if the scaled cartogram would overflow the canvas (no nudge yet,
+    // so add a safety margin to account for collision-avoidance displacement).
     const cb = computeCartogramBounds(state.geoData.features, state.geoData.projection, state.cartogramScales);
-    if (cb.minX < 0 || cb.minY < 0 || cb.maxX > width || cb.maxY > height) {
-      const padL = Math.max(0, -cb.minX);
-      const padR = Math.max(0, cb.maxX - width);
-      const padT = Math.max(0, -cb.minY);
-      const padB = Math.max(0, cb.maxY - height);
-      // Symmetric padding (use the worst-case side) + 10% safety margin
-      const padX = Math.max(padL, padR) * 1.1;
-      const padY = Math.max(padT, padB) * 1.1;
+    const NUDGE_MARGIN = 20; // generous px budget for force-sim displacement
+    if (cb.minX < NUDGE_MARGIN || cb.minY < NUDGE_MARGIN ||
+        cb.maxX > width - NUDGE_MARGIN || cb.maxY > height - NUDGE_MARGIN) {
+      const padL = Math.max(0, NUDGE_MARGIN - cb.minX);
+      const padR = Math.max(0, cb.maxX - (width - NUDGE_MARGIN));
+      const padT = Math.max(0, NUDGE_MARGIN - cb.minY);
+      const padB = Math.max(0, cb.maxY - (height - NUDGE_MARGIN));
+      const padX = Math.max(padL, padR);
+      const padY = Math.max(padT, padB);
       const pad = Math.max(padX, padY);
 
       state.geoData.projection.fitExtent(
@@ -200,15 +196,24 @@ async function switchCountry(id) {
         state.geoData.fitCollection,
       );
 
-      // Second pass: recompute everything that depends on the projection
-      state.symbols = computeSymbols(state.geoData.features, state.geoData.projection, width, height, state.electionData, config.elections);
-      state.dorlingSymbols = computeDorling(state.symbols);
-      state.dorlingSymbolMap = new Map();
-      for (const ds of state.dorlingSymbols) {
-        state.dorlingSymbolMap.set(ds.featureIndex, { x: ds.x, y: ds.y });
+      // Update centroids only (cheap); scale ratios are unchanged.
+      const pathGen = d3.geoPath(state.geoData.projection);
+      for (let i = 0; i < state.geoData.features.length; i++) {
+        const c = pathGen.centroid(state.geoData.features[i]);
+        if (c && isFinite(c[0])) {
+          state.cartogramScales[i].cx = c[0];
+          state.cartogramScales[i].cy = c[1];
+        }
       }
-      state.cartogramScales = computeCartogramScales(state.geoData.features, state.geoData.projection, state.electionData, config.elections);
-      state.cartogramScales = computeCartogramNudge(state.cartogramScales, state.geoData.features, state.geoData.projection);
+    }
+
+    // Now run nudge, symbols, and Dorling once on the final projection.
+    state.cartogramScales = computeCartogramNudge(state.cartogramScales, state.geoData.features, state.geoData.projection);
+    state.symbols = computeSymbols(state.geoData.features, state.geoData.projection, width, height, state.electionData, config.elections);
+    state.dorlingSymbols = computeDorling(state.symbols);
+    state.dorlingSymbolMap = new Map();
+    for (const ds of state.dorlingSymbols) {
+      state.dorlingSymbolMap.set(ds.featureIndex, { x: ds.x, y: ds.y });
     }
 
     // Snap to current shape (no animation on country switch)
