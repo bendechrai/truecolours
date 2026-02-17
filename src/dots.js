@@ -571,9 +571,14 @@ export function computeCartogramScales(features, projection, electionData, elect
  * Render scaled feature outlines on the border canvas during cartogram morph.
  * Used for viz modes that don't draw their own feature paths (dots, pies, bubbles).
  */
-export function renderCartogramOutlines(ctx, features, projection, cartogramScales, morphT, dpr) {
+export function renderCartogramOutlines(ctx, features, projection, cartogramScales, morphT, dpr, vizMode) {
   ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height);
   if (morphT <= 0) return;
+
+  // Symbol-based modes (pies, bubbles) carry all the information in the
+  // symbols themselves.  Filling regions with beige washes out the symbols,
+  // so only draw thin outlines for geographic context.
+  const outlineOnly = vizMode === 'pies' || vizMode === 'bubbles';
 
   const pathGen = d3.geoPath(projection, ctx);
   ctx.save();
@@ -593,10 +598,12 @@ export function renderCartogramOutlines(ctx, features, projection, cartogramScal
     ctx.scale(s, s);
     ctx.translate(-cs.cx, -cs.cy);
 
-    ctx.fillStyle = '#f0ede8';
-    ctx.beginPath();
-    pathGen(features[i]);
-    ctx.fill();
+    if (!outlineOnly) {
+      ctx.fillStyle = '#f0ede8';
+      ctx.beginPath();
+      pathGen(features[i]);
+      ctx.fill();
+    }
 
     ctx.strokeStyle = 'rgba(0,0,0,0.15)';
     ctx.lineWidth = 0.3 / s;
