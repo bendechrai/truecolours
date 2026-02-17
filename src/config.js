@@ -126,57 +126,108 @@ export const SHAPE_COMPAT = {
 };
 
 // ─── Mode descriptions (shown above the map) ─────────────────────
-// Each key is `vizMode` or `vizMode+shape` for shape-specific overrides.
+// Keyed by "vizMode:shape" so every valid combination gets a tailored
+// title, description, and accuracy rating.
 
 export const MODE_INFO = {
-  choropleth: {
+  // ── Choropleth ──────────────────────────────────────────────────
+  'choropleth:geo': {
     title: 'Classic Choropleth',
     purpose: 'The traditional election map: each region is coloured by its winning party.',
     insight: 'This is the map most often shared on social media. Large rural areas dominate visually, even when they contain fewer voters.',
     accuracy: 'Misleading',
     accuracyDetail: 'A 51\u201349 win looks identical to 80\u201320. Geographic area has no relationship to population.',
   },
-  dots: {
+  'choropleth:cartogram': {
+    title: 'Choropleth \u00b7 Cartogram',
+    purpose: 'Each region is coloured by its winning party and scaled so its area is proportional to eligible voters.',
+    insight: 'Removes geographic distortion: big, empty regions shrink while dense urban areas grow to reflect their true electoral weight.',
+    accuracy: 'Moderate',
+    accuracyDetail: 'Area now reflects population, but winner-take-all colouring still hides vote margins.',
+  },
+
+  // ── Dot Density ─────────────────────────────────────────────────
+  'dots:geo': {
     title: 'Dot Density',
-    purpose: 'Each dot represents a fixed number of voters, coloured by the party they voted for.',
+    purpose: 'Each dot represents a fixed number of voters, coloured by the party they voted for, placed within geographic boundaries.',
     insight: 'Dense urban areas show as tight clusters of mixed colour. Sparse rural areas get proportionally fewer dots.',
     accuracy: 'High',
     accuracyDetail: 'Every vote gets equal visual weight regardless of geography.',
   },
-  pies: {
+  'dots:dorling': {
+    title: 'Dot Density \u00b7 Dorling',
+    purpose: 'Each dot represents a fixed number of voters. Regions are pushed apart so small urban areas don\u2019t hide behind large neighbours.',
+    insight: 'Every region is visible at a proportional size, making it easy to compare dot patterns across regions.',
+    accuracy: 'High',
+    accuracyDetail: 'Every vote gets equal visual weight, and no region is hidden by overlap.',
+  },
+  'dots:cartogram': {
+    title: 'Dot Density \u00b7 Cartogram',
+    purpose: 'Each dot represents a fixed number of voters. Regions are scaled so their area matches their eligible voters.',
+    insight: 'Urban areas expand to show their full detail; rural areas shrink to reflect fewer voters.',
+    accuracy: 'High',
+    accuracyDetail: 'Every vote gets equal visual weight within regions that reflect their true electoral significance.',
+  },
+
+  // ── Pie Charts ──────────────────────────────────────────────────
+  'pies:geo': {
     title: 'Pie Charts',
-    purpose: 'Each region gets a proportional symbol with pie slices showing vote share.',
-    insight: 'You can compare both total size (eligible voters) and party breakdown at a glance.',
+    purpose: 'Each region gets a pie chart sized by eligible voters with slices showing vote share, at its geographic position.',
+    insight: 'Compare both total electorate size and party breakdown at a glance, though small regions may overlap with large neighbours.',
     accuracy: 'High',
     accuracyDetail: 'Circle area is proportional to eligible voters; slices show exact vote share.',
   },
-  bubbles: {
-    title: 'Party Circles',
-    purpose: 'Concentric circles sized by each party\u2019s vote count, largest behind.',
-    insight: 'Makes it easy to see which party dominates each region and by how much.',
+  'pies:dorling': {
+    title: 'Pie Charts \u00b7 Dorling',
+    purpose: 'Pie charts sized by eligible voters are pushed apart so every region is visible without overlap.',
+    insight: 'Easy to compare both total electorate size and vote breakdown across all regions simultaneously.',
     accuracy: 'High',
-    accuracyDetail: 'Each circle\u2019s area is proportional to that party\u2019s votes.',
+    accuracyDetail: 'Circle area is proportional to eligible voters; slices show exact vote share; no overlap.',
   },
-  alpha: {
-    title: 'Shaded (Value-by-Alpha)',
-    purpose: 'Regions are coloured by winner but faded by population density.',
-    insight: 'Low-density areas fade toward transparent, so visual weight tracks population.',
-    accuracy: 'Moderate',
-    accuracyDetail: 'Winner-takes-all colouring remains, but density weighting reduces geographic distortion.',
+  'pies:cartogram': {
+    title: 'Pie Charts \u00b7 Cartogram',
+    purpose: 'Pie charts showing vote share are placed on regions scaled to match their eligible voters.',
+    insight: 'Region area and pie size both reflect electoral weight, reinforcing the population signal.',
+    accuracy: 'High',
+    accuracyDetail: 'Both region area and symbol size are proportional to eligible voters; slices show exact vote share.',
   },
-};
 
-export const SHAPE_INFO = {
-  geo: {
-    label: 'Geographic',
-    detail: 'Regions shown at their real geographic positions and sizes.',
+  // ── Party Circles ───────────────────────────────────────────────
+  'bubbles:geo': {
+    title: 'Party Circles',
+    purpose: 'Concentric circles sized by each party\u2019s vote count, placed at each region\u2019s geographic position.',
+    insight: 'Makes it easy to see which party dominates each region and by how much, though small regions may be hidden.',
+    accuracy: 'High',
+    accuracyDetail: 'Each circle\u2019s area is proportional to that party\u2019s vote count.',
   },
-  dorling: {
-    label: 'Dorling',
-    detail: 'Symbols are pushed apart so they don\u2019t overlap, making small urban regions visible.',
+  'bubbles:dorling': {
+    title: 'Party Circles \u00b7 Dorling',
+    purpose: 'Concentric circles sized by each party\u2019s vote count, pushed apart so every region is visible.',
+    insight: 'Clear comparison of party dominance across all regions without geographic overlap hiding small areas.',
+    accuracy: 'High',
+    accuracyDetail: 'Each circle\u2019s area is proportional to that party\u2019s votes; no overlap between regions.',
   },
-  cartogram: {
-    label: 'Cartogram',
-    detail: 'Each region is scaled so its visual area is proportional to its eligible voters. Regions are nudged apart to prevent overlap.',
+  'bubbles:cartogram': {
+    title: 'Party Circles \u00b7 Cartogram',
+    purpose: 'Concentric circles sized by each party\u2019s vote count, placed on regions scaled to match eligible voters.',
+    insight: 'Region area reinforces the population signal alongside per-party circle sizing.',
+    accuracy: 'High',
+    accuracyDetail: 'Each circle\u2019s area is proportional to that party\u2019s votes within population-proportional regions.',
+  },
+
+  // ── Shaded (Value-by-Alpha) ─────────────────────────────────────
+  'alpha:geo': {
+    title: 'Shaded (Value-by-Alpha)',
+    purpose: 'Regions are coloured by winner but faded by population density \u2014 sparse areas become nearly transparent.',
+    insight: 'Low-density areas fade toward transparent, so visual weight tracks population rather than land area.',
+    accuracy: 'Moderate',
+    accuracyDetail: 'Winner-take-all colouring remains, but density weighting reduces geographic distortion.',
+  },
+  'alpha:cartogram': {
+    title: 'Shaded \u00b7 Cartogram',
+    purpose: 'Regions are coloured by winner, faded by density, and scaled to match eligible voters.',
+    insight: 'Combines two population corrections: area scaling and alpha fading. Geographic distortion is significantly reduced.',
+    accuracy: 'Moderate',
+    accuracyDetail: 'Winner-take-all colouring still hides margins, but both area and opacity corrections reduce distortion.',
   },
 };

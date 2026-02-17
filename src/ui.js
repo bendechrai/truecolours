@@ -1,6 +1,6 @@
 // DOM generation, legend, tooltips, year display, timeline controls
 
-import { COUNTRIES, AUTOPLAY_INTERVAL, VIZ_MODES, SHAPE_MODES, MODE_INFO, SHAPE_INFO } from './config.js';
+import { COUNTRIES, AUTOPLAY_INTERVAL, VIZ_MODES, SHAPE_MODES, MODE_INFO } from './config.js';
 
 /**
  * Build the entire page DOM structure.
@@ -318,36 +318,22 @@ export function createAutoplay(playBtn, getElections, getCurrentIndex, goToIndex
  * Update the mode description panel with current viz mode + shape info.
  */
 export function updateModeDescription(descEl, vizMode, shape) {
-  const modeInfo = MODE_INFO[vizMode];
-  const shapeInfo = SHAPE_INFO[shape];
-  if (!modeInfo) return;
+  const info = MODE_INFO[`${vizMode}:${shape}`];
+  if (!info) return;
 
   descEl.innerHTML = '';
 
-  const titleParts = [modeInfo.title];
-  if (shape !== 'geo') titleParts.push(shapeInfo.label);
+  descEl.appendChild(el('div', { className: 'mode-desc-header' }, [info.title]));
+  descEl.appendChild(el('p', {}, [info.purpose]));
+  descEl.appendChild(el('p', {}, [info.insight]));
 
-  descEl.appendChild(el('div', { className: 'mode-desc-header' }, [
-    titleParts.join(' \u00b7 '),
-  ]));
-
-  descEl.appendChild(el('p', {}, [modeInfo.purpose]));
-  descEl.appendChild(el('p', {}, [modeInfo.insight]));
-
-  const accuracyClass = modeInfo.accuracy === 'High' ? 'high'
-    : modeInfo.accuracy === 'Moderate' ? 'moderate' : 'low';
+  const accuracyClass = info.accuracy === 'High' ? 'high'
+    : info.accuracy === 'Moderate' ? 'moderate' : 'low';
 
   descEl.appendChild(el('p', { className: `mode-desc-accuracy ${accuracyClass}` }, [
-    el('strong', {}, [`${modeInfo.accuracy}`]),
-    ` \u2014 ${modeInfo.accuracyDetail}`,
+    el('strong', {}, [`${info.accuracy}`]),
+    ` \u2014 ${info.accuracyDetail}`,
   ]));
-
-  if (shape !== 'geo' && shapeInfo) {
-    descEl.appendChild(el('p', { className: 'mode-desc-shape-detail' }, [
-      el('strong', {}, [`${shapeInfo.label}: `]),
-      shapeInfo.detail,
-    ]));
-  }
 }
 
 function buildExplainer() {
