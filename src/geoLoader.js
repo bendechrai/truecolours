@@ -4,6 +4,10 @@ import * as d3 from 'd3';
 import * as topojson from 'topojson-client';
 import { TEST_CANVAS_SIZE } from './config.js';
 
+// Fraction of canvas reserved as padding on each side so cartogram
+// expansion doesn't clip against the canvas edge.
+const MAP_PADDING = 0.08;
+
 /**
  * Load US county boundaries (real TopoJSON from us-atlas).
  * Returns { features, stateFeatures, outline, stateBorders, projection }
@@ -13,7 +17,9 @@ export async function loadUS(url, width, height) {
   const counties = topojson.feature(topo, topo.objects.counties);
   const states = topojson.feature(topo, topo.objects.states);
 
-  const projection = d3.geoAlbersUsa().fitSize([width, height], counties);
+  const pad = Math.min(width, height) * MAP_PADDING;
+  const projection = d3.geoAlbersUsa()
+    .fitExtent([[pad, pad], [width - pad, height - pad]], counties);
 
   return {
     features: counties.features,
@@ -105,19 +111,22 @@ export async function loadGeoJSONCountry(url, config, width, height) {
     }
   }
 
+  const pad = Math.min(width, height) * MAP_PADDING;
+  const extent = [[pad, pad], [width - pad, height - pad]];
+
   if (config.projection === 'conicEqualArea') {
     projection = d3.geoConicEqualArea()
       .rotate([96, 0])
       .parallels([50, 70])
-      .fitSize([width, height], fitCollection);
+      .fitExtent(extent, fitCollection);
   } else if (config.projection === 'conicConformal') {
     projection = d3.geoConicConformal()
       .rotate([96, 0])
       .parallels([49, 77])
-      .fitSize([width, height], fitCollection);
+      .fitExtent(extent, fitCollection);
   } else {
     // Default: Mercator fitted to features
-    projection = d3.geoMercator().fitSize([width, height], fitCollection);
+    projection = d3.geoMercator().fitExtent(extent, fitCollection);
   }
 
   // Build a merged outline from all features for border rendering
