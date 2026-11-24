@@ -4,8 +4,13 @@
 //
 // Prerequisites: run scripts/download-data.sh first to fetch raw data to /tmp/
 //
+// Usage: node scripts/build-election-data.mjs [us] [uk] [au] [ca] [au-boundaries] [ca-boundaries]
+//        (no arguments builds everything)
+//
 // Data sources:
 //   US: stiles/presidential-elections (GitHub) → /tmp/us_county_results.json
+//       MEDSL 2024 precinct returns for Alaska and Virginia (GitHub)
+//         → /tmp/us_medsl_ak24.csv, /tmp/us_medsl_va24.csv
 //   UK: Electoral Calculus flat files → /tmp/uk_electdata_*.txt
 //   AU: AEC Tally Room first preferences CSVs → /tmp/au_*_candidates.csv
 //   CA: bwbecker/cdnFedElectionData + Lucas-Czarnecki/Canadian-Federal-Elections
@@ -84,26 +89,167 @@ function readLocal(filename) {
 }
 
 // ── US ─────────────────────────────────────────────────────────────
+//
+// Output keys must match the county features in us-atlas@3 counties-10m.json
+// (feature.id = 5-digit county FIPS), because that is what the map joins on.
+//
+// The upstream county file needs three kinds of repair to get there:
+//
+// 1. FIPS codes the boundary file doesn't draw (US_FIPS_MERGE below) are folded
+//    into the feature that covers them.
+//
+// 2. Alaska counts votes by state house district, not by borough, and upstream
+//    carries those rows under made-up FIPS codes 02001–02040. They are dropped:
+//    most match no feature, and 02013/02016/02020 collide with real boroughs
+//    (district 20's votes would be drawn as the whole of Anchorage).
+//    For 2024, boroughs are rebuilt from MEDSL's official precinct returns —
+//    see alaskaByBorough(). No borough-coded source was found for 2000–2020,
+//    so Alaska is empty on the map for those years.
+//
+// 3. Upstream's 2024 file omits 25 Virginia independent cities. They are filled
+//    from MEDSL's 2024 precinct returns, which code every locality.
+//
+// Features that still have no data, by design:
+//   - Kalawao County HI (15005): its handful of votes are counted with Maui.
+//   - Broomfield County CO (08014) in 2000: the county was created in 2001.
+//   - Puerto Rico and the other territories: no presidential electors.
+
+const US_FIPS_MERGE = {
+  '46113': '46102',   // Shannon County SD, renamed Oglala Lakota County in 2015
+  '51515': '51019',   // Bedford city VA, absorbed into Bedford County in 2013
+  '2938000': '29095', // Kansas City MO, reported apart from the rest of Jackson County
+  '02063': '02261',   // Chugach and Copper River census areas AK: carved out of
+  '02066': '02261',   //   Valdez-Cordova in 2019; the boundary file predates the split
+};
+
+function addVotes(target, fips, votes) {
+  const key = US_FIPS_MERGE[fips] || fips;
+  const t = target[key] || (target[key] = { dem: 0, rep: 0, oth: 0 });
+  t.dem += votes.dem;
+  t.rep += votes.rep;
+  t.oth += votes.oth;
+}
+
+// Presidential rows from a MEDSL precinct-returns CSV, one per precinct/mode/candidate.
+function medslPresident(filename) {
+  const partyIds = { DEMOCRAT: 'dem', REPUBLICAN: 'rep' };
+  return parseCSV(readLocal(filename))
+    .filter(r => r.office === 'US PRESIDENT' && r.candidate !== 'UNDERVOTES' && r.candidate !== 'OVERVOTES')
+    .map(r => ({
+      fips: r.county_fips,
+      district: r.jurisdiction_name,
+      party: partyIds[r.party_simplified] || 'oth',
+      votes: num(r.votes),
+    }));
+}
+
+// Split an integer total across keys in proportion to weights, keeping the sum exact.
+function apportion(total, weights) {
+  const keys = Object.keys(weights);
+  const sum = keys.reduce((s, k) => s + weights[k], 0);
+  const exact = keys.map(k => (total * weights[k]) / sum);
+  const shares = exact.map(Math.floor);
+  const leftover = total - shares.reduce((s, v) => s + v, 0);
+  const byRemainder = keys.map((_, i) => i).sort((a, b) => (exact[b] - shares[b]) - (exact[a] - shares[a]));
+  for (let i = 0; i < leftover; i++) shares[byRemainder[i]]++;
+  return Object.fromEntries(keys.map((k, i) => [k, shares[i]]));
+}
+
+// Alaska reports election-day votes by precinct, which MEDSL codes to a borough,
+// but absentee, early and questioned ballots only as one pool per house district.
+// Each district's pool is shared between the boroughs it covers in proportion to
+// each party's election-day votes there. 28 of the 40 districts sit inside a
+// single borough, so their pools need no estimate; in 2024 the estimated part
+// was about 42,000 of 338,000 votes. Federal overseas ballots (~400) are counted
+// statewide only and cannot be placed, so they are left out.
+function alaskaByBorough(rows) {
+  const parties = ['dem', 'rep', 'oth'];
+  const counted = {}; // district → borough FIPS → votes
+  const pooled = {};  // district → votes with no borough
+  for (const r of rows) {
+    if (r.fips) {
+      const boroughs = counted[r.district] || (counted[r.district] = {});
+      const b = boroughs[r.fips] || (boroughs[r.fips] = { dem: 0, rep: 0, oth: 0 });
+      b[r.party] += r.votes;
+    } else {
+      const p = pooled[r.district] || (pooled[r.district] = { dem: 0, rep: 0, oth: 0 });
+      p[r.party] += r.votes;
+    }
+  }
+
+  const result = {};
+  let unplaced = 0;
+  for (const boroughs of Object.values(counted)) {
+    for (const [fips, votes] of Object.entries(boroughs)) addVotes(result, fips, votes);
+  }
+  for (const [district, pool] of Object.entries(pooled)) {
+    const boroughs = counted[district];
+    if (!boroughs) {
+      unplaced += pool.dem + pool.rep + pool.oth;
+      continue;
+    }
+    for (const party of parties) {
+      let weights = Object.fromEntries(Object.entries(boroughs).map(([f, v]) => [f, v[party]]));
+      if (Object.values(weights).every(w => w === 0)) {
+        weights = Object.fromEntries(Object.entries(boroughs).map(([f, v]) => [f, v.dem + v.rep + v.oth]));
+      }
+      for (const [fips, share] of Object.entries(apportion(pool[party], weights))) {
+        addVotes(result, fips, { dem: 0, rep: 0, oth: 0, [party]: share });
+      }
+    }
+  }
+  return { result, unplaced };
+}
+
+function byCounty(rows) {
+  const result = {};
+  for (const r of rows) addVotes(result, r.fips, { dem: 0, rep: 0, oth: 0, [r.party]: r.votes });
+  return result;
+}
 
 function buildUS() {
   console.log('US: Processing county results...');
   const raw = JSON.parse(readLocal('us_county_results.json'));
 
   const result = {};
+  const seen = new Set(); // upstream repeats a few rows verbatim
+  let alaskaDistrictRows = 0;
   for (const r of raw) {
     const year = String(r.year);
     if (!result[year]) result[year] = {};
     const fips = String(r.fips).padStart(5, '0');
+    if (seen.has(`${year}/${fips}`)) continue;
+    seen.add(`${year}/${fips}`);
+    if (r.state_po === 'AK') {
+      alaskaDistrictRows++;
+      continue;
+    }
     const dem = num(r.votes_dem);
     const rep = num(r.votes_rep);
     const all = num(r.votes_all);
-    result[year][fips] = { dem, rep, oth: Math.max(0, all - dem - rep) };
+    addVotes(result[year], fips, { dem, rep, oth: Math.max(0, all - dem - rep) });
   }
+  console.log(`US: dropped ${alaskaDistrictRows} Alaska house-district rows`);
+
+  // 2024: Alaska boroughs
+  const alaska = alaskaByBorough(medslPresident('us_medsl_ak24.csv'));
+  Object.assign(result['2024'], alaska.result);
+  console.log(`US 2024: ${Object.keys(alaska.result).length} Alaska boroughs from MEDSL (${alaska.unplaced} overseas votes not placed)`);
+
+  // 2024: Virginia localities missing upstream
+  const virginia = byCounty(medslPresident('us_medsl_va24.csv'));
+  let filled = 0;
+  for (const [fips, votes] of Object.entries(virginia)) {
+    if (result['2024'][fips]) continue;
+    result['2024'][fips] = votes;
+    filled++;
+  }
+  console.log(`US 2024: ${filled} Virginia localities filled from MEDSL`);
 
   const outPath = join(OUT_DIR, 'us-elections.json');
   writeFileSync(outPath, JSON.stringify(result));
   const years = Object.keys(result).sort();
-  console.log(`US: ${years.length} years, ${Object.keys(result[years[years.length - 1]]).length} counties`);
+  for (const year of years) console.log(`US ${year}: ${Object.keys(result[year]).length} counties`);
   console.log(`US: ${(readFileSync(outPath).length / 1024).toFixed(0)} KB`);
 }
 
@@ -395,11 +541,18 @@ function buildCABoundaries() {
 
 console.log('Building election data...\n');
 
-buildUS();
-buildUK();
-buildAU();
-buildCA();
-buildAUBoundaries();
-buildCABoundaries();
+const builders = {
+  us: buildUS,
+  uk: buildUK,
+  au: buildAU,
+  ca: buildCA,
+  'au-boundaries': buildAUBoundaries,
+  'ca-boundaries': buildCABoundaries,
+};
+const requested = process.argv.slice(2);
+for (const name of requested) {
+  if (!builders[name]) throw new Error(`Unknown target "${name}". Choose from: ${Object.keys(builders).join(', ')}`);
+}
+for (const name of requested.length ? requested : Object.keys(builders)) builders[name]();
 
 console.log('\nDone! Files written to public/data/');
