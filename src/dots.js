@@ -17,6 +17,7 @@ const TWO_PI = Math.PI * 2;
 // Dot density: target total dot count across all features
 const TARGET_DOT_COUNT = 100000;
 const DOT_RADIUS = 0.8;
+const DOT_BATCH = 400; // dots per draw call group, see renderDots
 const GOLDEN_ANGLE = Math.PI * (3 - Math.sqrt(5)); // ≈ 2.3999...
 
 // ─── Seeded PRNG (mulberry32) ───────────────────────────────────
@@ -327,32 +328,37 @@ export function renderDots(ctx, dots, dpr, featureTransforms = null) {
 
   const r = DOT_RADIUS * dpr;
 
-  // Batch by colour for efficient canvas rendering
-  const byColor = new Map();
-  for (const dot of dots) {
-    let dx = dot.x, dy = dot.y;
-    if (featureTransforms && dot.fi !== undefined) {
-      const ft = featureTransforms[dot.fi];
-      dx = ft.ax * dot.x + ft.bx;
-      dy = ft.ay * dot.y + ft.by;
+  // Draw in the dots' shuffled order so no party ends up on top where dots
+  // overlap.  Filling one colour at a time would paint the last colour over
+  // every dense cluster, so batch by colour only within small slices.
+  for (let start = 0; start < dots.length; start += DOT_BATCH) {
+    const byColor = new Map();
+    const end = Math.min(start + DOT_BATCH, dots.length);
+    for (let i = start; i < end; i++) {
+      const dot = dots[i];
+      let dx = dot.x, dy = dot.y;
+      if (featureTransforms && dot.fi !== undefined) {
+        const ft = featureTransforms[dot.fi];
+        dx = ft.ax * dot.x + ft.bx;
+        dy = ft.ay * dot.y + ft.by;
+      }
+      const key = (dot.r << 16) | (dot.g << 8) | dot.b;
+      let group = byColor.get(key);
+      if (!group) byColor.set(key, (group = { r: dot.r, g: dot.g, b: dot.b, pts: [] }));
+      group.pts.push(dx, dy);
     }
-    const key = (dot.r << 16) | (dot.g << 8) | dot.b;
-    if (!byColor.has(key)) {
-      byColor.set(key, { r: dot.r, g: dot.g, b: dot.b, pts: [] });
-    }
-    byColor.get(key).pts.push({ x: dx, y: dy });
-  }
 
-  for (const [, group] of byColor) {
-    ctx.fillStyle = `rgb(${group.r},${group.g},${group.b})`;
-    ctx.beginPath();
-    for (const pt of group.pts) {
-      const cx = pt.x * dpr;
-      const cy = pt.y * dpr;
-      ctx.moveTo(cx + r, cy);
-      ctx.arc(cx, cy, r, 0, TWO_PI);
+    for (const group of byColor.values()) {
+      ctx.fillStyle = `rgb(${group.r},${group.g},${group.b})`;
+      ctx.beginPath();
+      for (let i = 0; i < group.pts.length; i += 2) {
+        const cx = group.pts[i] * dpr;
+        const cy = group.pts[i + 1] * dpr;
+        ctx.moveTo(cx + r, cy);
+        ctx.arc(cx, cy, r, 0, TWO_PI);
+      }
+      ctx.fill();
     }
-    ctx.fill();
   }
 }
 
