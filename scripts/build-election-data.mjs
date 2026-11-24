@@ -3,20 +3,23 @@
 // Output: public/data/{country}-elections.json
 //
 // Prerequisites: run scripts/download-data.sh first to fetch raw data to /tmp/
+// (or to $RAW_DIR, if set for both scripts).
 //
 // Data sources:
 //   US: stiles/presidential-elections (GitHub) → /tmp/us_county_results.json
 //   UK: Electoral Calculus flat files → /tmp/uk_electdata_*.txt
 //   AU: AEC Tally Room first preferences CSVs → /tmp/au_*_candidates.csv
 //   CA: bwbecker/cdnFedElectionData + Lucas-Czarnecki/Canadian-Federal-Elections
+//   US House: Call the Map + Census (see scripts/us-house.mjs)
 
 import { readFileSync, writeFileSync, mkdirSync, existsSync } from 'fs';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
+import { buildUSHouse, buildUSHouseBoundaries } from './us-house.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const OUT_DIR = join(__dirname, '..', 'public', 'data');
-const TMP = '/tmp';
+const TMP = process.env.RAW_DIR || '/tmp';
 
 mkdirSync(OUT_DIR, { recursive: true });
 
@@ -401,5 +404,7 @@ buildAU();
 buildCA();
 buildAUBoundaries();
 buildCABoundaries();
+buildUSHouse(TMP, OUT_DIR);
+buildUSHouseBoundaries(TMP, OUT_DIR);
 
 console.log('\nDone! Files written to public/data/');

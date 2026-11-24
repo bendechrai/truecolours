@@ -26,7 +26,7 @@ export async function loadUS(url, width, height) {
 }
 
 /**
- * Load real GeoJSON boundaries for UK, Australia, or Canada.
+ * Load real GeoJSON boundaries (UK, Australia, Canada, US House districts).
  * Returns { features, outline, regionBorders, projection, fitCollection }
  */
 export async function loadGeoJSONCountry(url, config, width, height) {
@@ -106,7 +106,10 @@ export async function loadGeoJSONCountry(url, config, width, height) {
     }
   }
 
-  if (config.projection === 'conicEqualArea') {
+  if (config.projection === 'albersUsa') {
+    // Composite projection: Alaska and Hawaii inset below the lower 48
+    projection = d3.geoAlbersUsa().fitSize([width, height], fitCollection);
+  } else if (config.projection === 'conicEqualArea') {
     projection = d3.geoConicEqualArea()
       .rotate([96, 0])
       .parallels([50, 70])
@@ -123,10 +126,17 @@ export async function loadGeoJSONCountry(url, config, width, height) {
 
   // Build a merged outline from all features for border rendering
   // We draw individual region borders instead of a single mesh
+  let outline = collection;     // country outline = union of all features
+  if (config.outlineUrl) {
+    // A coarser set of shapes (e.g. states) to draw heavily over the regions
+    outline = await d3.json(config.outlineUrl);
+    for (const f of outline.features) rewindFeature(f);
+  }
+
   return {
     features,
     stateFeatures: null,
-    outline: collection,        // country outline = union of all features
+    outline,
     stateBorders: null,
     regionBorders: true,        // flag to draw individual feature borders
     projection,

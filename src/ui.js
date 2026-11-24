@@ -34,10 +34,12 @@ export function buildUI(container) {
   container.appendChild(countryBar);
 
   // Data source banner
+  const bannerNotice = el('span', { className: 'banner-notice' });
   const banner = el('div', { className: 'sample-banner' }, [
     el('strong', {}, ['Real election data']),
     ' \u2014 Results sourced from official electoral commissions and open datasets. ',
     'Scroll down for details.',
+    bannerNotice,
   ]);
   container.appendChild(banner);
 
@@ -86,7 +88,7 @@ export function buildUI(container) {
 
   // Timeline
   const timeline = el('div', { className: 'timeline' });
-  const yearDisplay = el('div', { className: 'year-display' }, ['2024']);
+  const yearDisplay = el('div', { className: 'year-display' });
   const timelineControls = el('div', { className: 'timeline-controls' });
 
   const prevBtn = el('button', { className: 'timeline-btn', title: 'Previous' }, ['\u25C2']);
@@ -159,6 +161,7 @@ export function buildUI(container) {
     shapeButtons,
     modeDescription,
     banner,
+    bannerNotice,
     mapCard,
     mapContainer,
     zoomWrapper,
@@ -232,6 +235,17 @@ export function showTooltip(tooltipEl, regionData, regionName, parties, showNonV
   const turnout = ((totalVotes / eligible) * 100).toFixed(1);
 
   let html = `<div class="tooltip-name">${regionName}</div>`;
+
+  if (totalVotes === 0) {
+    // An unopposed candidate in a state that doesn't tally uncontested races
+    const winner = parties.find((p) => p.id === regionData.winner);
+    html += `<div class="tooltip-note">${winner ? `${winner.name} elected unopposed` : 'No votes recorded'}`
+      + ` \u2014 no votes were tallied.</div>`;
+    tooltipEl.innerHTML = html;
+    placeTooltip(tooltipEl, x, y, mapRect);
+    return;
+  }
+
   html += `<div class="tooltip-bars">`;
 
   const denominator = showNonVoters ? eligible : totalVotes;
@@ -262,11 +276,21 @@ export function showTooltip(tooltipEl, regionData, regionName, parties, showNonV
 
   html += `</div>`;
   html += `<div class="tooltip-turnout">Turnout: ${turnout}% (${totalVotes.toLocaleString()} / ${eligible.toLocaleString()})</div>`;
+  if (regionData.uncontested) {
+    html += `<div class="tooltip-note">Uncontested \u2014 only one candidate on the ballot.</div>`;
+  }
+  if (regionData.pending) {
+    html += `<div class="tooltip-note">Not final \u2014 ${regionData.pending}.</div>`;
+  }
 
   tooltipEl.innerHTML = html;
+  placeTooltip(tooltipEl, x, y, mapRect);
+}
+
+/** Show the tooltip near the cursor, kept within the map bounds. */
+function placeTooltip(tooltipEl, x, y, mapRect) {
   tooltipEl.classList.remove('hidden');
 
-  // Position near cursor, kept within map bounds
   const tw = tooltipEl.offsetWidth;
   const th = tooltipEl.offsetHeight;
   let left = x + 16;
@@ -489,7 +513,18 @@ function buildExplainer() {
     ]),
     el('ul', {}, [
       el('li', {}, [
-        el('strong', {}, ['US: ']),
+        el('strong', {}, ['US House (2026 midterms): ']),
+        'district results from ',
+        el('a', { href: 'https://www.callthemap.com/results', target: '_blank', rel: 'noopener' }, ['Call the Map']),
+        ' (CC\u00a0BY\u00a04.0), compiled from state election offices and ',
+        el('a', { href: 'https://civicapi.org/', target: '_blank', rel: 'noopener' }, ['civicAPI']),
+        '. Counts are unofficial until each state certifies them. District boundaries and eligible ',
+        'voters (citizen voting-age population, 2020\u20132024) from the ',
+        el('a', { href: 'https://www.census.gov/', target: '_blank', rel: 'noopener' }, ['US Census Bureau']),
+        '.',
+      ]),
+      el('li', {}, [
+        el('strong', {}, ['US President: ']),
         'MIT Election Data + Science Lab (',
         el('a', { href: 'https://electionlab.mit.edu/', target: '_blank', rel: 'noopener' }, ['electionlab.mit.edu']),
         ')',

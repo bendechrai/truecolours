@@ -92,6 +92,17 @@ body {
 }
 
 /* Sample data banner */
+.banner-notice {
+  font-weight: 600;
+}
+
+/* A single election has nothing to step through */
+.timeline.single .timeline-controls,
+.timeline.single .timeline-slider,
+.timeline.single .year-labels {
+  display: none;
+}
+
 .sample-banner {
   background: #FFF8E1;
   border: 1px solid #FFE082;
@@ -571,6 +582,14 @@ body {
   border-top: 1px solid #eee;
   padding-top: 0.35rem;
 }
+
+.tooltip-note {
+  margin-top: 0.35rem;
+  font-size: 0.75rem;
+  font-style: italic;
+  color: var(--text-muted);
+}
+
 
 /* Explainer */
 .explainer {

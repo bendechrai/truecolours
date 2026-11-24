@@ -91,9 +91,11 @@ export function colourSymbols(symbols, electionData, features, parties, year, sh
 
     const { votes, eligible } = regionData;
     const totalVotes = Object.values(votes).reduce((a, b) => a + b, 0);
+    // No ballots tallied (e.g. an unopposed seat): nothing to draw, rather
+    // than a pie claiming every eligible voter stayed home.
+    if (totalVotes === 0) return { slices: [] };
     const nonVoters = eligible - totalVotes;
     const denominator = showNonVoters ? eligible : totalVotes;
-    if (denominator === 0) return { slices: [] };
 
     const slices = [];
     let angle = -Math.PI / 2;
@@ -186,17 +188,7 @@ export function renderChoropleth(ctx, features, projection, electionData, partie
   for (const i of indices) {
     const rd = yearData[i];
 
-    let fillColor = '#e0e0e0';
-    if (rd) {
-      let maxVotes = 0;
-      for (const party of parties) {
-        const count = rd.votes[party.id] || 0;
-        if (count > maxVotes) {
-          maxVotes = count;
-          fillColor = party.colour;
-        }
-      }
-    }
+    const fillColor = leadingParty(rd, parties)?.colour || '#e0e0e0';
 
     ctx.save();
     if (useCartogram) {
@@ -247,6 +239,7 @@ export function generateDots(features, projection, electionData, parties, year, 
     const rd = yearData[i];
     if (!rd) continue;
     const totalVotes = Object.values(rd.votes).reduce((a, b) => a + b, 0);
+    if (totalVotes === 0) continue;
     totalCount += showNonVoters ? rd.eligible : totalVotes;
   }
 
@@ -258,6 +251,10 @@ export function generateDots(features, projection, electionData, parties, year, 
   for (let i = 0; i < features.length; i++) {
     const rd = yearData[i];
     if (!rd) continue;
+    // No ballots tallied (e.g. an unopposed seat): draw nothing, rather than
+    // a cluster of grey dots claiming every eligible voter stayed home.
+    const totalVotes = Object.values(rd.votes).reduce((a, b) => a + b, 0);
+    if (totalVotes === 0) continue;
 
     const centroid = pathGen.centroid(features[i]);
     if (!centroid || isNaN(centroid[0]) || isNaN(centroid[1])) continue;
@@ -280,7 +277,6 @@ export function generateDots(features, projection, electionData, parties, year, 
       }
     }
     if (showNonVoters) {
-      const totalVotes = Object.values(rd.votes).reduce((a, b) => a + b, 0);
       const nv = rd.eligible - totalVotes;
       const n = Math.round(nv / votersPerDot);
       if (n > 0) {
@@ -372,8 +368,8 @@ export function colourBubbles(symbols, electionData, features, parties, year, sh
 
     const { votes, eligible } = regionData;
     const totalVotes = Object.values(votes).reduce((a, b) => a + b, 0);
+    if (totalVotes === 0) return { circles: [] };
     const denominator = showNonVoters ? eligible : totalVotes;
-    if (denominator === 0) return { circles: [] };
 
     const entries = [];
     for (const party of parties) {
@@ -492,17 +488,8 @@ export function renderAlpha(ctx, features, projection, electionData, parties, ye
     const rd = yearData[i];
 
     // Find winner
-    let winnerRgb = [200, 200, 200];
-    if (rd) {
-      let maxVotes = 0;
-      for (const party of parties) {
-        const count = rd.votes[party.id] || 0;
-        if (count > maxVotes) {
-          maxVotes = count;
-          winnerRgb = hexToRgb(party.colour);
-        }
-      }
-    }
+    const leader = leadingParty(rd, parties);
+    const winnerRgb = leader ? hexToRgb(leader.colour) : [200, 200, 200];
 
     // Alpha from density (log scale to avoid extreme values crushing)
     const alpha = rd && maxDensity > 0
@@ -879,6 +866,24 @@ export function buildHitTestCanvas(features, projection, width, height, dpr) {
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────
+
+/**
+ * The party with the most votes in a region.  Where no votes were tallied
+ * (an unopposed candidate), falls back to the region's recorded `winner`.
+ */
+export function leadingParty(regionData, parties) {
+  if (!regionData) return null;
+  let leader = null;
+  let maxVotes = 0;
+  for (const party of parties) {
+    const count = regionData.votes[party.id] || 0;
+    if (count > maxVotes) {
+      maxVotes = count;
+      leader = party;
+    }
+  }
+  return leader || parties.find((p) => p.id === regionData.winner) || null;
+}
 
 function hexToRgb(hex) {
   const n = parseInt(hex.slice(1), 16);

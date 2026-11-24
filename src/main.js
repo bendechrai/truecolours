@@ -504,6 +504,8 @@ function updateTimelineUI() {
   const year = config.elections[state.yearIndex];
 
   ui.yearDisplay.textContent = year;
+  ui.timeline.classList.toggle('single', config.elections.length < 2);
+  ui.bannerNotice.textContent = config.notice ? ` ${config.notice}` : '';
   ui.slider.max = String(config.elections.length - 1);
   ui.slider.value = String(state.yearIndex);
 

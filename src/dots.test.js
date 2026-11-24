@@ -59,6 +59,7 @@ import {
   computeCartogramBounds,
   computeFeatureTransforms,
   computeSymbolPositions,
+  leadingParty,
 } from './dots.js';
 
 // ─── computeSymbols ─────────────────────────────────────────────
@@ -648,6 +649,41 @@ describe('computeSymbolPositions', () => {
   });
 });
 
+// ─── Regions with no tallied votes (unopposed seats) ────────────
+
+describe('regions with no tallied votes', () => {
+  const noVotes = { votes: { dem: 0, rep: 0 }, eligible: 10000, winner: 'dem', uncontested: true };
+
+  it('leadingParty picks the party with the most votes', () => {
+    expect(leadingParty({ votes: { dem: 40, rep: 60 }, eligible: 200 }, parties).id).toBe('rep');
+  });
+
+  it('leadingParty falls back to the recorded winner when no votes were tallied', () => {
+    expect(leadingParty(noVotes, parties).id).toBe('dem');
+    expect(leadingParty({ votes: { dem: 0, rep: 0 }, eligible: 10000 }, parties)).toBeNull();
+    expect(leadingParty(undefined, parties)).toBeNull();
+  });
+
+  it('are not drawn as all non-voters', () => {
+    const features = makeFeatures(2);
+    const data = makeElectionData(features, [{ dem: 0.6, rep: 0.4 }]);
+    data[2020][1] = noVotes;
+    const symbols = computeSymbols(features, mockProjection(), 800, 600, data, [2020]);
+    expect(symbols).toHaveLength(2); // still sized by its eligible voters
+
+    const pies = colourSymbols(symbols, data, features, parties, 2020, true);
+    expect(pies[0].slices.length).toBeGreaterThan(0);
+    expect(pies[1].slices).toHaveLength(0);
+
+    const bubbles = colourBubbles(symbols, data, features, parties, 2020, true);
+    expect(bubbles[1].circles).toHaveLength(0);
+
+    const dots = generateDots(features, mockProjection(), data, parties, 2020, true);
+    expect(dots.length).toBeGreaterThan(0);
+    expect(dots.every((d) => d.fi === 0)).toBe(true);
+  });
+});
+
 // ─── Election data loading ──────────────────────────────────────
 
 describe('election data integrity', () => {
@@ -672,6 +708,23 @@ describe('election data integrity', () => {
       } else {
         expect(totalRep, `${year}: Rep should win popular vote`).toBeGreaterThan(totalDem);
       }
+    }
+  });
+
+  it('US House data covers all 435 districts and matches the boundaries', async () => {
+    const { readFileSync } = await import('fs');
+    const raw = JSON.parse(readFileSync('public/data/ushouse-elections.json', 'utf8'));
+    const shapes = JSON.parse(readFileSync('public/data/ushouse-boundaries.geojson', 'utf8'));
+    const districts = raw['2026'];
+
+    expect(Object.keys(districts)).toHaveLength(435);
+    expect(shapes.features.map((f) => f.properties.name).sort()).toEqual(Object.keys(districts).sort());
+
+    for (const [name, d] of Object.entries(districts)) {
+      const total = d.dem + d.rep + d.oth;
+      expect(d.eligible, `${name}: eligible voters`).toBeGreaterThanOrEqual(total);
+      // A district with no tallied votes must say who won it
+      if (total === 0) expect(['dem', 'rep', 'oth'], name).toContain(d.winner);
     }
   });
 
