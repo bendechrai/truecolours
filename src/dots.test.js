@@ -59,6 +59,7 @@ import {
   computeCartogramBounds,
   computeFeatureTransforms,
   computeSymbolPositions,
+  leadingParty,
 } from './dots.js';
 
 // ─── computeSymbols ─────────────────────────────────────────────
@@ -648,6 +649,41 @@ describe('computeSymbolPositions', () => {
   });
 });
 
+// ─── Regions with no tallied votes (unopposed seats) ────────────
+
+describe('regions with no tallied votes', () => {
+  const noVotes = { votes: { dem: 0, rep: 0 }, eligible: 10000, winner: 'dem', uncontested: true };
+
+  it('leadingParty picks the party with the most votes', () => {
+    expect(leadingParty({ votes: { dem: 40, rep: 60 }, eligible: 200 }, parties).id).toBe('rep');
+  });
+
+  it('leadingParty falls back to the recorded winner when no votes were tallied', () => {
+    expect(leadingParty(noVotes, parties).id).toBe('dem');
+    expect(leadingParty({ votes: { dem: 0, rep: 0 }, eligible: 10000 }, parties)).toBeNull();
+    expect(leadingParty(undefined, parties)).toBeNull();
+  });
+
+  it('are not drawn as all non-voters', () => {
+    const features = makeFeatures(2);
+    const data = makeElectionData(features, [{ dem: 0.6, rep: 0.4 }]);
+    data[2020][1] = noVotes;
+    const symbols = computeSymbols(features, mockProjection(), 800, 600, data, [2020]);
+    expect(symbols).toHaveLength(2); // still sized by its eligible voters
+
+    const pies = colourSymbols(symbols, data, features, parties, 2020, true);
+    expect(pies[0].slices.length).toBeGreaterThan(0);
+    expect(pies[1].slices).toHaveLength(0);
+
+    const bubbles = colourBubbles(symbols, data, features, parties, 2020, true);
+    expect(bubbles[1].circles).toHaveLength(0);
+
+    const dots = generateDots(features, mockProjection(), data, parties, 2020, true);
+    expect(dots.length).toBeGreaterThan(0);
+    expect(dots.every((d) => d.fi === 0)).toBe(true);
+  });
+});
+
 // ─── Election data loading ──────────────────────────────────────
 
 describe('election data integrity', () => {
@@ -673,6 +709,49 @@ describe('election data integrity', () => {
         expect(totalRep, `${year}: Rep should win popular vote`).toBeGreaterThan(totalDem);
       }
     }
+  });
+
+  it('US House data covers all 435 districts and matches the boundaries', async () => {
+    const { readFileSync } = await import('fs');
+    const raw = JSON.parse(readFileSync('public/data/ushouse-elections.json', 'utf8'));
+    const shapes = JSON.parse(readFileSync('public/data/ushouse-boundaries.geojson', 'utf8'));
+    const districts = raw['2026'];
+
+    expect(Object.keys(districts)).toHaveLength(435);
+    expect(shapes.features.map((f) => f.properties.name).sort()).toEqual(Object.keys(districts).sort());
+
+    for (const [name, d] of Object.entries(districts)) {
+      const total = d.dem + d.rep + d.oth;
+      expect(d.eligible, `${name}: eligible voters`).toBeGreaterThanOrEqual(total);
+      // A district with no tallied votes must say who won it
+      if (total === 0) expect(['dem', 'rep', 'oth'], name).toContain(d.winner);
+    }
+  });
+
+  it('US data is keyed by 5-digit county FIPS', async () => {
+    const { readFileSync } = await import('fs');
+    const raw = JSON.parse(readFileSync('public/data/us-elections.json', 'utf8'));
+
+    for (const [year, yearData] of Object.entries(raw)) {
+      for (const fips of Object.keys(yearData)) {
+        expect(fips, `${year}/${fips}`).toMatch(/^\d{5}$/);
+      }
+      // Shannon County SD was renamed; the boundary file only has the new code.
+      expect(yearData['46113'], `${year}: 46113 should be stored as 46102`).toBeUndefined();
+      expect(yearData['46102'], `${year}: Oglala Lakota`).toBeDefined();
+    }
+  });
+
+  it('US 2024 has no gaps relative to 2020', async () => {
+    const { readFileSync } = await import('fs');
+    const raw = JSON.parse(readFileSync('public/data/us-elections.json', 'utf8'));
+
+    const missing = Object.keys(raw['2020']).filter(fips => !raw['2024'][fips]);
+    expect(missing).toEqual([]);
+
+    const inState = (prefix) => Object.keys(raw['2024']).filter(fips => fips.startsWith(prefix));
+    expect(inState('02').length, 'Alaska boroughs and census areas').toBe(29);
+    expect(inState('51').length, 'Virginia counties and independent cities').toBe(133);
   });
 
   it('no county has negative vote counts', async () => {

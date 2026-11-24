@@ -1,8 +1,35 @@
 // Country configurations: parties, colours, election years, projections
 
 export const COUNTRIES = {
+  ushouse: {
+    name: 'US House',
+    flag: '\u{1F1FA}\u{1F1F8}',
+    isoCode: 840,
+    elections: [2026],
+    parties: [
+      { id: 'dem', name: 'Democrat', colour: '#1375B7' },
+      { id: 'rep', name: 'Republican', colour: '#E81B23' },
+      { id: 'oth', name: 'Other', colour: '#F5C542' },
+    ],
+    nonVoterColour: '#CFCFCF',
+    projection: 'albersUsa',
+    boundaryUrl: './data/ushouse-boundaries.geojson',
+    outlineUrl: './data/ushouse-states.geojson', // state borders drawn over districts
+    boundaryType: 'geojson',
+    nameProperty: 'name',
+    aspectRatio: 0.625,
+    // Shown in the banner while results are not yet certified.
+    notice: '2026 midterm counts are unofficial until each state certifies them; '
+      + 'a few races are still being counted or go to a runoff. '
+      + 'Eligible voters are Census citizen voting-age population estimates.',
+    dataSources: [
+      { name: 'Call the Map (CC BY 4.0)', url: 'https://www.callthemap.com/results' },
+      { name: 'civicAPI', url: 'https://civicapi.org/' },
+      { name: 'US Census Bureau', url: 'https://www.census.gov/' },
+    ],
+  },
   us: {
-    name: 'United States',
+    name: 'US President',
     flag: '\u{1F1FA}\u{1F1F8}',
     isoCode: 840,
     elections: [2000, 2004, 2008, 2012, 2016, 2020, 2024],
@@ -94,7 +121,7 @@ export const COUNTRIES = {
   },
 };
 
-export const DEFAULT_COUNTRY = 'us';
+export const DEFAULT_COUNTRY = 'ushouse';
 export const MOBILE_BREAKPOINT = 768;
 export const AUTOPLAY_INTERVAL = 2500;
 export const RESIZE_DEBOUNCE = 300;

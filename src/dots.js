@@ -17,6 +17,7 @@ const TWO_PI = Math.PI * 2;
 // Dot density: target total dot count across all features
 const TARGET_DOT_COUNT = 100000;
 const DOT_RADIUS = 0.8;
+const DOT_BATCH = 400; // dots per draw call group, see renderDots
 const GOLDEN_ANGLE = Math.PI * (3 - Math.sqrt(5)); // ≈ 2.3999...
 
 // ─── Seeded PRNG (mulberry32) ───────────────────────────────────
@@ -91,9 +92,11 @@ export function colourSymbols(symbols, electionData, features, parties, year, sh
 
     const { votes, eligible } = regionData;
     const totalVotes = Object.values(votes).reduce((a, b) => a + b, 0);
+    // No ballots tallied (e.g. an unopposed seat): nothing to draw, rather
+    // than a pie claiming every eligible voter stayed home.
+    if (totalVotes === 0) return { slices: [] };
     const nonVoters = eligible - totalVotes;
     const denominator = showNonVoters ? eligible : totalVotes;
-    if (denominator === 0) return { slices: [] };
 
     const slices = [];
     let angle = -Math.PI / 2;
@@ -186,17 +189,7 @@ export function renderChoropleth(ctx, features, projection, electionData, partie
   for (const i of indices) {
     const rd = yearData[i];
 
-    let fillColor = '#e0e0e0';
-    if (rd) {
-      let maxVotes = 0;
-      for (const party of parties) {
-        const count = rd.votes[party.id] || 0;
-        if (count > maxVotes) {
-          maxVotes = count;
-          fillColor = party.colour;
-        }
-      }
-    }
+    const fillColor = leadingParty(rd, parties)?.colour || '#e0e0e0';
 
     ctx.save();
     if (useCartogram) {
@@ -247,6 +240,7 @@ export function generateDots(features, projection, electionData, parties, year, 
     const rd = yearData[i];
     if (!rd) continue;
     const totalVotes = Object.values(rd.votes).reduce((a, b) => a + b, 0);
+    if (totalVotes === 0) continue;
     totalCount += showNonVoters ? rd.eligible : totalVotes;
   }
 
@@ -258,6 +252,10 @@ export function generateDots(features, projection, electionData, parties, year, 
   for (let i = 0; i < features.length; i++) {
     const rd = yearData[i];
     if (!rd) continue;
+    // No ballots tallied (e.g. an unopposed seat): draw nothing, rather than
+    // a cluster of grey dots claiming every eligible voter stayed home.
+    const totalVotes = Object.values(rd.votes).reduce((a, b) => a + b, 0);
+    if (totalVotes === 0) continue;
 
     const centroid = pathGen.centroid(features[i]);
     if (!centroid || isNaN(centroid[0]) || isNaN(centroid[1])) continue;
@@ -280,7 +278,6 @@ export function generateDots(features, projection, electionData, parties, year, 
       }
     }
     if (showNonVoters) {
-      const totalVotes = Object.values(rd.votes).reduce((a, b) => a + b, 0);
       const nv = rd.eligible - totalVotes;
       const n = Math.round(nv / votersPerDot);
       if (n > 0) {
@@ -331,32 +328,37 @@ export function renderDots(ctx, dots, dpr, featureTransforms = null) {
 
   const r = DOT_RADIUS * dpr;
 
-  // Batch by colour for efficient canvas rendering
-  const byColor = new Map();
-  for (const dot of dots) {
-    let dx = dot.x, dy = dot.y;
-    if (featureTransforms && dot.fi !== undefined) {
-      const ft = featureTransforms[dot.fi];
-      dx = ft.ax * dot.x + ft.bx;
-      dy = ft.ay * dot.y + ft.by;
+  // Draw in the dots' shuffled order so no party ends up on top where dots
+  // overlap.  Filling one colour at a time would paint the last colour over
+  // every dense cluster, so batch by colour only within small slices.
+  for (let start = 0; start < dots.length; start += DOT_BATCH) {
+    const byColor = new Map();
+    const end = Math.min(start + DOT_BATCH, dots.length);
+    for (let i = start; i < end; i++) {
+      const dot = dots[i];
+      let dx = dot.x, dy = dot.y;
+      if (featureTransforms && dot.fi !== undefined) {
+        const ft = featureTransforms[dot.fi];
+        dx = ft.ax * dot.x + ft.bx;
+        dy = ft.ay * dot.y + ft.by;
+      }
+      const key = (dot.r << 16) | (dot.g << 8) | dot.b;
+      let group = byColor.get(key);
+      if (!group) byColor.set(key, (group = { r: dot.r, g: dot.g, b: dot.b, pts: [] }));
+      group.pts.push(dx, dy);
     }
-    const key = (dot.r << 16) | (dot.g << 8) | dot.b;
-    if (!byColor.has(key)) {
-      byColor.set(key, { r: dot.r, g: dot.g, b: dot.b, pts: [] });
-    }
-    byColor.get(key).pts.push({ x: dx, y: dy });
-  }
 
-  for (const [, group] of byColor) {
-    ctx.fillStyle = `rgb(${group.r},${group.g},${group.b})`;
-    ctx.beginPath();
-    for (const pt of group.pts) {
-      const cx = pt.x * dpr;
-      const cy = pt.y * dpr;
-      ctx.moveTo(cx + r, cy);
-      ctx.arc(cx, cy, r, 0, TWO_PI);
+    for (const group of byColor.values()) {
+      ctx.fillStyle = `rgb(${group.r},${group.g},${group.b})`;
+      ctx.beginPath();
+      for (let i = 0; i < group.pts.length; i += 2) {
+        const cx = group.pts[i] * dpr;
+        const cy = group.pts[i + 1] * dpr;
+        ctx.moveTo(cx + r, cy);
+        ctx.arc(cx, cy, r, 0, TWO_PI);
+      }
+      ctx.fill();
     }
-    ctx.fill();
   }
 }
 
@@ -372,8 +374,8 @@ export function colourBubbles(symbols, electionData, features, parties, year, sh
 
     const { votes, eligible } = regionData;
     const totalVotes = Object.values(votes).reduce((a, b) => a + b, 0);
+    if (totalVotes === 0) return { circles: [] };
     const denominator = showNonVoters ? eligible : totalVotes;
-    if (denominator === 0) return { circles: [] };
 
     const entries = [];
     for (const party of parties) {
@@ -492,17 +494,8 @@ export function renderAlpha(ctx, features, projection, electionData, parties, ye
     const rd = yearData[i];
 
     // Find winner
-    let winnerRgb = [200, 200, 200];
-    if (rd) {
-      let maxVotes = 0;
-      for (const party of parties) {
-        const count = rd.votes[party.id] || 0;
-        if (count > maxVotes) {
-          maxVotes = count;
-          winnerRgb = hexToRgb(party.colour);
-        }
-      }
-    }
+    const leader = leadingParty(rd, parties);
+    const winnerRgb = leader ? hexToRgb(leader.colour) : [200, 200, 200];
 
     // Alpha from density (log scale to avoid extreme values crushing)
     const alpha = rd && maxDensity > 0
@@ -879,6 +872,24 @@ export function buildHitTestCanvas(features, projection, width, height, dpr) {
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────
+
+/**
+ * The party with the most votes in a region.  Where no votes were tallied
+ * (an unopposed candidate), falls back to the region's recorded `winner`.
+ */
+export function leadingParty(regionData, parties) {
+  if (!regionData) return null;
+  let leader = null;
+  let maxVotes = 0;
+  for (const party of parties) {
+    const count = regionData.votes[party.id] || 0;
+    if (count > maxVotes) {
+      maxVotes = count;
+      leader = party;
+    }
+  }
+  return leader || parties.find((p) => p.id === regionData.winner) || null;
+}
 
 function hexToRgb(hex) {
   const n = parseInt(hex.slice(1), 16);

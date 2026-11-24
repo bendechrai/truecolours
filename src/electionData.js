@@ -1,9 +1,11 @@
 // Fetch real election data and map to feature indices for rendering.
 //
 // JSON files live in public/data/{country}-elections.json.
-// US data is keyed by FIPS code; UK/AU/CA are keyed by region name.
+// US presidential data is keyed by county FIPS code; the rest by region name.
 //
 // Returns: { [year]: { [featureIndex]: { votes: { partyId: count }, eligible: number } } }
+// A region may also carry `winner` (party id, where an unopposed candidate
+// received no tallied votes), `uncontested` and `pending` (why it isn't final).
 
 import * as d3 from 'd3';
 
@@ -12,7 +14,7 @@ const cache = {};
 /**
  * Load real election data for a country.
  *
- * @param {string} countryId - 'us', 'uk', 'au', or 'ca'
+ * @param {string} countryId - key in COUNTRIES, e.g. 'us', 'ushouse', 'uk'
  * @param {object} config    - country config from config.js
  * @param {Array}  features  - GeoJSON features (order = feature indices)
  * @returns election data keyed by year then feature index
@@ -53,7 +55,12 @@ export async function loadElectionData(countryId, config, features) {
       // eligible: use stored value if present, else default to total votes
       const eligible = regionVotes.eligible || total;
 
-      yearData[fi] = { votes, eligible };
+      const region = { votes, eligible };
+      // Optional flags (see scripts/us-house.mjs)
+      if (regionVotes.winner) region.winner = regionVotes.winner;
+      if (regionVotes.uncontested) region.uncontested = true;
+      if (regionVotes.pending) region.pending = regionVotes.pending;
+      yearData[fi] = region;
     }
 
     data[year] = yearData;
@@ -66,7 +73,7 @@ export async function loadElectionData(countryId, config, features) {
  * Build a map from region key → feature index.
  *
  * US: key by FIPS code (feature.id)
- * UK/AU/CA: key by normalised region name (feature.properties._name)
+ * Everything else: key by normalised region name (feature.properties._name)
  */
 function buildKeyMap(countryId, features) {
   const map = new Map();
@@ -78,7 +85,7 @@ function buildKeyMap(countryId, features) {
       map.set(fips, i);
     }
   } else {
-    // UK/AU/CA: match by name
+    // Match by name
     for (let i = 0; i < features.length; i++) {
       const name = features[i].properties?._name;
       if (name) {
