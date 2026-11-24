@@ -728,6 +728,32 @@ describe('election data integrity', () => {
     }
   });
 
+  it('US data is keyed by 5-digit county FIPS', async () => {
+    const { readFileSync } = await import('fs');
+    const raw = JSON.parse(readFileSync('public/data/us-elections.json', 'utf8'));
+
+    for (const [year, yearData] of Object.entries(raw)) {
+      for (const fips of Object.keys(yearData)) {
+        expect(fips, `${year}/${fips}`).toMatch(/^\d{5}$/);
+      }
+      // Shannon County SD was renamed; the boundary file only has the new code.
+      expect(yearData['46113'], `${year}: 46113 should be stored as 46102`).toBeUndefined();
+      expect(yearData['46102'], `${year}: Oglala Lakota`).toBeDefined();
+    }
+  });
+
+  it('US 2024 has no gaps relative to 2020', async () => {
+    const { readFileSync } = await import('fs');
+    const raw = JSON.parse(readFileSync('public/data/us-elections.json', 'utf8'));
+
+    const missing = Object.keys(raw['2020']).filter(fips => !raw['2024'][fips]);
+    expect(missing).toEqual([]);
+
+    const inState = (prefix) => Object.keys(raw['2024']).filter(fips => fips.startsWith(prefix));
+    expect(inState('02').length, 'Alaska boroughs and census areas').toBe(29);
+    expect(inState('51').length, 'Virginia counties and independent cities').toBe(133);
+  });
+
   it('no county has negative vote counts', async () => {
     const { readFileSync } = await import('fs');
     const raw = JSON.parse(readFileSync('public/data/us-elections.json', 'utf8'));

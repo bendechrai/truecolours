@@ -4,6 +4,8 @@
 #
 # Data sources:
 #   US: stiles/presidential-elections (2000-2024 county results)
+#       MEDSL/2024-elections-official (2024 precinct returns for AK and VA,
+#       which fill the Alaska boroughs and Virginia cities the county file lacks)
 #   UK: Electoral Calculus (constituency results per election)
 #   AU: AEC Tally Room (first preferences by candidate by division)
 #   CA: bwbecker/cdnFedElectionData (by riding) + Lucas-Czarnecki (candidates)
@@ -24,6 +26,15 @@ curl -sL --max-time 60 \
   "https://raw.githubusercontent.com/stiles/presidential-elections/main/data/processed/presidential_county_results.json" \
   -o /tmp/us_county_results.json
 echo "  $(wc -c < /tmp/us_county_results.json) bytes"
+
+echo "US: MEDSL 2024 precinct returns (Alaska, Virginia)..."
+for st in ak va; do
+  curl -sL --max-time 120 \
+    "https://raw.githubusercontent.com/MEDSL/2024-elections-official/main/individual_states/${st}24.zip" \
+    -o "/tmp/us_medsl_${st}24.zip"
+  unzip -p "/tmp/us_medsl_${st}24.zip" "${st}24.csv" > "/tmp/us_medsl_${st}24.csv"
+  echo "  ${st}: $(wc -c < /tmp/us_medsl_${st}24.csv) bytes"
+done
 
 # ── UK ──────────────────────────────────────────────────────────
 echo "UK: Electoral Calculus flat files..."
